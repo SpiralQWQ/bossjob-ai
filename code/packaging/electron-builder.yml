@@ -1,0 +1,77 @@
+# electron-builder 配置 —— BossJobAI 桌面应用（Windows NSIS 安装包）
+#
+# 用法（在 electron/ 目录下执行，app 目录即 electron/）：
+#   npx electron-builder --config ../packaging/electron-builder.yml --win nsis
+#
+# 产物：code/packaging/release/BossJobAI-Setup-0.1.0.exe
+#
+# 约定：
+#   - appId / 版本号与 electron/package.json 保持一致（version=0.1.0）；
+#   - 前端构建产物 frontend/dist 由 `cd frontend && npm run build` 产出；
+#   - 后端 exe 由 PyInstaller 产出到 backend/dist/bossjob-backend/（见 backend.spec），
+#     随包以 extraResources 安装到 <安装目录>/resources/backend/。
+#   - 本 yml 通过 --config 传入，优先级高于 electron/package.json 中的 "build" 字段。
+#
+# 打包前置强制门禁（csp-xss-defense）：源码 frontend/index.html 的 CSP 含 script-src
+# 'unsafe-inline'（开发模式 Vite HMR 所需），生产严格版 script-src 'self' 依赖构建期
+# strictCspBuild 重写 + verify 脚本断言。beforePack 挂入 electron/scripts/verify-prepack.cjs，
+# 使「直接 npx electron-builder」路径（BUILD.md §6）也无法绕过校验：
+#   打包开始前必先强制运行 verify-dist.mjs（dist 与源码同步 + 产物严格 CSP）与
+#   verify-csp.mjs（源码/dist 严格 CSP + 样式注入审计）；任一失败即中止打包，
+#   拒绝生产保留 'unsafe-inline' 的宽松 CSP 产物进入安装包（XSS→window.api→后端全链）。
+
+# 打包前置强制门禁 hook：无论经 npm run dist / pack 还是直接 npx electron-builder 都会执行；
+# 校验失败（退出码非 0）时抛错使 electron-builder 立即中止。
+beforePack: ./scripts/verify-prepack.cjs
+
+appId: com.bossjobai.desktop
+productName: BossJobAI
+copyright: "Copyright © 2026 BossJobAI"
+
+directories:
+  app: .                     # 应用目录 = electron/（含 package.json / main.js / preload.js）
+  output: ../packaging/release
+
+# 需要打进安装包的应用文件（glob 相对 app 目录 = electron/）
+#   - electron/ 本体：main.js + preload.js
+#   - 前端构建产物：../frontend/dist/** → app.asar/frontend/dist/**
+# electron-builder 会自动携带 package.json 与 main 入口；devDependencies 不参与。
+files:
+  - "main.js"
+  - "preload.js"
+  - "endpoint-whitelist.cjs"
+  - "../frontend/dist/**/*"
+  - "!node_modules/**/*"
+  - "!**/*.map"
+
+# 后端 exe（PyInstaller 产物）以 extraResources 放到进程外目录 resources/，
+# 因为 asar 内的文件不可执行。
+# 安装后位于：<安装目录>/resources/backend/bossjob-backend.exe
+extraResources:
+  - from: ../backend/dist/bossjob-backend
+    to: backend
+    filter: ["**/*"]
+  # 运行配置：随包放置「仅默认值」模板（api_key 恒为空），Electron 主进程首启复制到
+  # %APPDATA%/BossJobAI/settings.json（后端 constants.py frozen 分支与端口解析共用该目录）。
+  # 安全红线：禁止改为 from: ../settings.json —— 开发态填写的真实 api_key 会随安装包明文泄露。
+  - from: ../packaging/settings.default.json
+    to: settings.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # 未签名安装包会触发 SmartScreen 提示；正式发布建议配置代码签名证书。
+  # signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BossJobAI
+  artifactName: "${productName}-Setup-${version}.${ext}"
+
+# 版本号取 electron/package.json 的 version（当前 0.1.0）。

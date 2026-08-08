@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- CSP 基线 = 生产严格版（源码即严格，防 strictCspBuild / verify-dist 失效后产物回退宽松）：
+         script-src 'self'（无 'unsafe-inline'/'unsafe-eval'）——打包产物仅单个外部 <script type=module>，
+         无需内联许可；form-action 'none'——阻止跨源 <form> 外发数据（form-action 不受 default-src /
+         connect-src 管辖，必须显式声明，2026-08-05 csp-hardening）。
+         开发模式（vite dev）由 vite.config.ts strictCspDev 插件注入一次性 nonce：Vite html.cspNonce
+         给 @vitejs/plugin-react 的 Fast Refresh 内联预置脚本等打 nonce 属性，并把 'nonce-<n>' 并入本
+         meta 的 script-src（仅 serve 生效，构建产物不含 nonce）。electron/main.js 开发态 header CSP
+         刻意不写 default-src / script-src（避免与 meta nonce 交集冲突），其余指令 + form-action 'none' 保持。
+         style-src 'unsafe-inline'：React 内联 style 属性（类型化、逐属性赋值）+ antd v5 cssinjs 运行时
+         <style> 标签（本项目无外部 CSS）所需；保留前提下严禁把不可信 job/导入内容插值进 style 属性或
+         <style> 内容，verify-csp.mjs 源码扫描门禁在每次构建兜底（2026-08-04 审计：src 无此类路径）。
+         connect-src 后端放行收紧为具体后端端口 http://127.0.0.1:__BACKEND_PORT__（占位符，由 vite.config.ts
+         strictCspBuild / strictCspDev 在构建/开发期从单一事实源 electron/backend-default-port.cjs 注入，
+         默认 8675，与 electron/main.js DEFAULT_PORT 及后端 constants 一致；并优先跟随 BOSS_PORT 环境变量）。
+         不再用端口通配 http://127.0.0.1:*，避免 dev 渲染进程被注入脚本后对本机任意本地端口服务做探测/横向
+         访问。实际端口由 main.js buildCspPolicy / interceptFileProtocol 按 backendPort 动态注入/重写，header
+         与 meta 取交集后保持严格；改用非默认端口（BOSS_PORT / settings.json）时无需再手工改本行，构建注入自动跟随。
+         Vite HMR 仍需
+         http://localhost:5173 / ws://localhost:5173 / ws://127.0.0.1:5173（随 DEV_SERVER_URL 主机）。
+         生产构建由 vite.config.ts strictCspBuild 断言 script-src 收紧 + connect-src 具体端口 +
+         form-action 存在，verify-dist.mjs / verify-csp.mjs 兜底；打包态主文档再由 electron/main.js
+         interceptFileProtocol 运行时整体重写为严格策略（含 form-action 'none'），三重防御。 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:__BACKEND_PORT__ http://localhost:5173 ws://localhost:5173 ws://127.0.0.1:5173; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    />
+    <title>BossJobAI 求职投递助手</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

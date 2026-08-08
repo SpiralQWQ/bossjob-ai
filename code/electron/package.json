@@ -1,0 +1,37 @@
+{
+  "name": "boss-job-ai-desktop",
+  "version": "0.1.6",
+  "private": true,
+  "description": "BOSS直聘 AI 求职助手 - Electron 桌面壳",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "verify:dist": "node ../frontend/scripts/verify-dist.mjs",
+    "verify:csp": "node ../frontend/scripts/verify-csp.mjs",
+    "verify:whitelist": "node scripts/verify-endpoint-whitelist.cjs",
+    "pack": "npm run verify:dist && npm run verify:csp && npm run verify:whitelist && electron-builder --dir",
+    "dist": "npm run verify:dist && npm run verify:csp && npm run verify:whitelist && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "beforePack": "./scripts/verify-prepack.cjs",
+    "appId": "com.bossjobai.desktop",
+    "productName": "BossJobAI求职投递助手",
+    "directories": {
+      "output": "../packaging/release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "endpoint-whitelist.cjs",
+      "backend-default-port.cjs",
+      "../frontend/dist/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

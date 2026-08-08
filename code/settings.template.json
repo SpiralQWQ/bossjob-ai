@@ -1,0 +1,26 @@
+{
+  "port": 8675,
+  "llm": {
+    "provider": "deepseek",
+    "api_key": "",
+    "model": "deepseek-chat",
+    "base_url": ""
+  },
+  "apply": {
+    "daily_limit": 15,
+    "interval_seconds": [45, 120],
+    "halt_on_risk": true
+  },
+  "browser": {
+    "user_data_dir": "",
+    "headless": false
+  },
+  "blacklist": {
+    "companies": [],
+    "keywords": ["外包", "猎头", "培训"]
+  },
+  "security": {
+    "external_url_hosts": []
+  },
+  "cities": []
+}

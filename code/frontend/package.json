@@ -1,0 +1,29 @@
+{
+  "name": "boss-job-ai-frontend",
+  "version": "0.1.6",
+  "private": true,
+  "description": "BOSS直聘 AI 求职助手 - 前端 (React + TS + Vite + Antd + Zustand)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && node scripts/verify-csp.mjs",
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "verify:csp": "node scripts/verify-csp.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "zustand": "^4.5.4",
+    "antd": "^5.20.0",
+    "dayjs": "^1.11.10"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "typescript": "^5.5.4",
+    "@vitejs/plugin-react": "^4.3.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0"
+  }
+}
