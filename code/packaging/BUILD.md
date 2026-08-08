@@ -1,7 +1,7 @@
 # BossJobAI 桌面应用 —— Windows 构建指南（BUILD.md）
 
 > 面向 **Windows 11 x64**。构建顺序：**前端构建 → 后端 PyInstaller → electron-builder**。
-> 最终产物：`packaging/release/BossJobAI-Setup-0.1.0.exe`（NSIS 安装包）。
+> 最终产物：`packaging/release/BossJobAI-Setup-0.1.6.exe`（NSIS 安装包）。
 
 ---
 
@@ -56,7 +56,7 @@ npm config set registry https://registry.npmmirror.com
 在 `code/backend` 下创建并激活虚拟环境，安装运行依赖 + PyInstaller。
 
 ```powershell
-cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助手_v0.1\code\backend
+cd code\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -71,7 +71,7 @@ pip install pyinstaller
 ## 3. 前端构建
 
 ```powershell
-cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助手_v0.1\code\frontend
+cd code\frontend
 npm install
 npm run build
 ```
@@ -86,7 +86,7 @@ npm run build
 在 `code/packaging` 下执行（保持 venv 激活）：
 
 ```powershell
-cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助手_v0.1\code\packaging
+cd code\packaging
 ..\backend\.venv\Scripts\pyinstaller --noconfirm --clean `
   --distpath ..\backend\dist --workpath ..\build\backend backend.spec
 ```
@@ -100,12 +100,12 @@ cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助�
 
 ```powershell
 # 终端 A：启动后端 exe（端口取 settings.json，默认 8675）
-cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助手_v0.1\code\backend\dist\bossjob-backend
+cd code\backend\dist\bossjob-backend
 .\bossjob-backend.exe
 
 # 终端 B：健康检查
 curl http://127.0.0.1:8675/api/health
-# 期望：{"status":"ok","version":"0.1.0"}
+# 期望：{"status":"ok","version":"0.1.6"}
 curl http://127.0.0.1:8675/api/settings
 # 期望：返回 settings.json 内容
 ```
@@ -117,7 +117,7 @@ curl http://127.0.0.1:8675/api/settings
 ## 5. Electron 依赖
 
 ```powershell
-cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助手_v0.1\code\electron
+cd code\electron
 npm install
 ```
 
@@ -129,11 +129,11 @@ app 目录是 `electron/`（含 `package.json` + `main.js` + `preload.js`），
 用 `--config` 显式指定 `packaging/electron-builder.yml`：
 
 ```powershell
-cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助手_v0.1\code\electron
+cd code\electron
 npx electron-builder --config ..\packaging\electron-builder.yml --win nsis
 ```
 
-- 产物：`code/packaging/release/BossJobAI-Setup-0.1.0.exe`
+- 产物：`code/packaging/release/BossJobAI-Setup-0.1.6.exe`
 - 配置要点：
   - `appId: com.bossjobai.desktop`，`productName: BossJobAI`，版本取 `electron/package.json`
   - `files`：`main.js` + `preload.js` + `../frontend/dist/**`（→ `app.asar/frontend/dist/`）
@@ -144,10 +144,10 @@ npx electron-builder --config ..\packaging\electron-builder.yml --win nsis
 
 ## 7. 安装包冒烟测试（必做）
 
-1. 双击安装 `BossJobAI-Setup-0.1.0.exe`，安装到默认位置。
+1. 双击安装 `BossJobAI-Setup-0.1.6.exe`，安装到默认位置。
 2. 启动 BossJobAI，确认窗口正常加载前端页面。
 3. 浏览器访问 `http://127.0.0.1:8675/api/health`，确认后端已随应用拉起：
-   `{"status":"ok","version":"0.1.0"}`。
+   `{"status":"ok","version":"0.1.6"}`。
 4. 退出应用后确认后端进程被一并关闭（无残留 `bossjob-backend.exe`）。
 
 ---

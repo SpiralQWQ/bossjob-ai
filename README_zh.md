@@ -172,7 +172,7 @@ npm run build        # = tsc && vite build → frontend/dist/
 ### 5.2 后端 PyInstaller（需先建好 `backend/.venv` 并安装 `pyinstaller`）
 
 ```powershell
-cd E:\AAA.Program\CC\AAA.Tool\Independent_Exe_Tools\M.BossJobAI_求职投递助手_v0.1\code\packaging
+cd code\packaging
 ..\backend\.venv\Scripts\pyinstaller --noconfirm --clean `
   --distpath ..\backend\dist --workpath ..\build\backend backend.spec
 ```
