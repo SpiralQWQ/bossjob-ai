@@ -3,13 +3,14 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.7-brightgreen.svg)](CHANGELOG_zh.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d6.svg)](#构建打包)
+[![CI](https://img.shields.io/github/actions/workflow/status/SpiralQWQ/bossjob-ai/ci.yml?branch=master)](.github/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 > **隐私优先的本地求职桌面应用。** 简历、投递、面试、Offer 全程本地管理——无云端、无账号、数据只属于你自己。
 >
 > **当前为手动记录管理版（v0.1）：** 一个面向非技术背景求职者的 **Electron 桌面应用**，简历 / 投递记录均在本地维护（简历为本地表单录入、投递为人工登记改状态）。BOSS直聘 线上自动化（解析/匹配/自动投递）**规划中、尚未上线**，详见[路线图](#路线图)。
 
-**已落地 7 大页面** —— 工作台 / 简历 / 投递记录 / 投递登记 / 面试登记 / 求职看板 / 设置 —— 全量 CRUD + 筛选 + 批量改状态，导出（JSON/CSV/离线）/ 导入（文件/粘贴）/ 备份恢复（zip 四件套 + checksum 校验）。
+**已落地 7 大页面** —— 工作台 / 简历 / 投递记录 / 投递登记 / 面试登记 / 求职看板 / 设置 —— 全量 CRUD + 筛选 + 批量改状态，外加跨页面共用的**数据与备份**工具箱：导出（JSON/CSV/离线）/ 导入（文件/粘贴）/ 备份恢复（zip 四件套 + checksum 校验）。
 
 - ✅ **本地优先、隐私第一**：数据全存本地 SQLite，不上传任何服务器。
 - ✅ **人类把关**：当前人工记录管理，未来 AI 辅助投递时每次动作仍保持人工确认。
@@ -45,6 +46,7 @@
 - [安全基线](#安全基线)
 - [路线图](#路线图)
 - [参与贡献](#参与贡献)
+- [更新日志](#更新日志)
 - [开源协议](#开源协议)
 - [支持一下](#支持一下)
 
@@ -88,6 +90,8 @@ npm run dev        # http://127.0.0.1:5173（strictPort，端口被占会直接�
 ```
 
 > 浏览器直开 dev server 时 `window.api` 桥接不可用，工作台会优雅降级提示「请通过 Electron 启动」。
+
+> **3 步跑通：**clone → 装后端依赖 → `npm start`。桌面壳会自动拉起后端并承载前端，可跳过第 2、3 步。
 
 ### 4. 启动桌面壳（推荐）
 
@@ -264,6 +268,12 @@ npm run dist
 
 - 发现 Bug？提交 [Issue](https://github.com/SpiralQWQ/bossjob-ai/issues)。
 - 有想法？发起 [Discussion](https://github.com/SpiralQWQ/bossjob-ai/discussions) 或直接提 PR。
+
+---
+
+## 📝 更新日志
+
+完整版本变更历史见 [CHANGELOG_zh.md](CHANGELOG_zh.md)。
 
 ---
 

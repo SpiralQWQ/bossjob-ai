@@ -3,13 +3,14 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.7-brightgreen.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d6.svg)](#build-package)
+[![CI](https://img.shields.io/github/actions/workflow/status/SpiralQWQ/bossjob-ai/ci.yml?branch=master)](.github/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 > **Privacy-first local desktop app for job seekers.** Track applications, interviews, and offers locally — no cloud, no account, your data stays on your machine.
 >
 > **Manual tracking edition (v0.1):** an Electron desktop app for non-technical job seekers. Resumes & application records are maintained locally (resume = local form entry, applications = manual status updates). BOSS直聘 online automation (parsing, matching, auto-apply) is **planned but not yet integrated** — see [Roadmap](#roadmap).
 
-**7 pages delivered** — Dashboard / Resume / All Applications / Apply / Interview / Tracker / Settings — full CRUD + filtering + batch status update, export (JSON/CSV/offline) / import (file/paste) / backup-restore (zip bundle + checksum verification).
+**7 pages delivered** — Dashboard / Resume / All Applications / Apply / Interview / Tracker / Settings — full CRUD + filtering + batch status update, plus a cross-cutting **Data & Backup** toolbox: export (JSON/CSV/offline) / import (file/paste) / backup-restore (zip bundle + checksum verification).
 
 - ✅ **Local-first & privacy-first**: all data lives in a local SQLite database; nothing is uploaded.
 - ✅ **Human-in-the-loop**: designed for manual tracking today, AI-assisted applying tomorrow (every action stays human-confirmed).
@@ -45,6 +46,7 @@
 - [Security Baseline](#security-baseline)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
+- [Changelog](#changelog)
 - [License](#license)
 - [Support](#support)
 
@@ -88,6 +90,8 @@ npm run dev        # http://127.0.0.1:5173 (strictPort)
 ```
 
 > Opening the dev server in a plain browser: the `window.api` bridge is unavailable; Dashboard degrades gracefully with "Please launch via Electron".
+
+> **3-step quickest path:** clone → install backend deps → `npm start`. The desktop shell auto-spawns the backend and serves the frontend, so you can skip steps 2 & 3.
 
 ### 4. Run the desktop shell (recommended)
 
@@ -264,6 +268,12 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first,
 
 - Found a bug? Open an [issue](https://github.com/SpiralQWQ/bossjob-ai/issues).
 - Have an idea? Open a [discussion](https://github.com/SpiralQWQ/bossjob-ai/discussions) or PR.
+
+---
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
