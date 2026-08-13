@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  verify:
+    name: Build & security gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            code/frontend/package-lock.json
+            code/electron/package-lock.json
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ---- Frontend: install + build (tsc && vite build && verify-csp) ----
+      - name: Frontend build + CSP gate
+        working-directory: code/frontend
+        run: |
+          npm ci
+          npm run build
+
+      # ---- Electron: endpoint-whitelist regression gate ----
+      - name: Endpoint-whitelist regression gate
+        working-directory: code/electron
+        run: node scripts/verify-endpoint-whitelist.cjs
+
+      # ---- Backend: Python syntax gate ----
+      - name: Backend syntax gate
+        working-directory: code/backend
+        run: |
+          python -m compileall -q app
+
+      # ---- Docs: relative-link sanity check (Markdown only) ----
+      - name: Docs link sanity check
+        run: python .github/scripts/check-doc-links.py

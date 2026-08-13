@@ -3,10 +3,10 @@
 # 用法（在 electron/ 目录下执行，app 目录即 electron/）：
 #   npx electron-builder --config ../packaging/electron-builder.yml --win nsis
 #
-# 产物：code/packaging/release/BossJobAI-Setup-0.1.0.exe
+# 产物：code/packaging/release/BossJobAI-Setup-0.1.7.exe
 #
 # 约定：
-#   - appId / 版本号与 electron/package.json 保持一致（version=0.1.0）；
+#   - appId / 版本号与 electron/package.json 保持一致（version=0.1.7）；
 #   - 前端构建产物 frontend/dist 由 `cd frontend && npm run build` 产出；
 #   - 后端 exe 由 PyInstaller 产出到 backend/dist/bossjob-backend/（见 backend.spec），
 #     随包以 extraResources 安装到 <安装目录>/resources/backend/。
@@ -40,6 +40,7 @@ files:
   - "main.js"
   - "preload.js"
   - "endpoint-whitelist.cjs"
+  - "backend-default-port.cjs"
   - "../frontend/dist/**/*"
   - "!node_modules/**/*"
   - "!**/*.map"
@@ -74,4 +75,4 @@ nsis:
   shortcutName: BossJobAI
   artifactName: "${productName}-Setup-${version}.${ext}"
 
-# 版本号取 electron/package.json 的 version（当前 0.1.0）。
+# 版本号取 electron/package.json 的 version（当前 0.1.7）。

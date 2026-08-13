@@ -1,6 +1,6 @@
 {
   "name": "boss-job-ai-frontend",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "BOSS直聘 AI 求职助手 - 前端 (React + TS + Vite + Antd + Zustand)",
   "type": "module",

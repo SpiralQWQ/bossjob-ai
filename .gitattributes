@@ -1,0 +1,16 @@
+# 行尾归一化与文件类型声明
+# text=auto：让 git 自行探测文本文件并统一行尾（仓库内 LF，检出按平台 core.autocrlf）
+* text=auto
+
+# 二进制资产（不可做文本归一化）
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.exe binary
+*.db binary
+*.db-wal binary
+*.db-shm binary

@@ -35,7 +35,7 @@ SETTINGS_PATH: Path = PROJECT_ROOT / "settings.json"
 # 应用元信息
 # ---------------------------------------------------------------------------
 APP_NAME: str = "BossJobAI_求职投递助手"
-APP_VERSION: str = "0.1.6"
+APP_VERSION: str = "0.1.7"
 # 版本号三处同步（禁止各自随意修改，改版时必须三处一起改）：
 #   1) 本处 APP_VERSION          → 后端 /api/health 返回的 version 字段
 #   2) electron/package.json     → 安装包版本（electron-builder 读取，artifactName 模板）

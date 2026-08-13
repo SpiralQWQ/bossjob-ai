@@ -1,6 +1,6 @@
 """健康检查路由。
 
-GET /api/health → {"status": "ok", "version": "0.1.0", "auth_token_fingerprint": "<sha256前16位>"}
+GET /api/health → {"status": "ok", "version": "<APP_VERSION>", "auth_token_fingerprint": "<sha256前16位>"}
 """
 
 from __future__ import annotations
