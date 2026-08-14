@@ -8,7 +8,7 @@
 
 > **Privacy-first local desktop app for job seekers.** Track applications, interviews, and offers locally — no cloud, no account, your data stays on your machine.
 >
-> **Manual tracking edition (v0.1):** an Electron desktop app for non-technical job seekers. Resumes & application records are maintained locally (resume = local form entry, applications = manual status updates). BOSS直聘 online automation (parsing, matching, auto-apply) is **planned but not yet integrated** — see [Roadmap](#roadmap).
+> **Manual tracking edition:** an Electron desktop app for non-technical job seekers. Resumes & application records are maintained locally (resume = local form entry, applications = manual status updates). BOSS直聘 online automation (parsing, matching, auto-apply) is **planned but not yet integrated** — see [Roadmap](#roadmap).
 
 **7 pages delivered** — Dashboard / Resume / All Applications / Apply / Interview / Tracker / Settings — full CRUD + filtering + batch status update, plus a cross-cutting **Data & Backup** toolbox: export (JSON/CSV/offline) / import (file/paste) / backup-restore (zip bundle + checksum verification).
 
@@ -109,7 +109,7 @@ Electron auto-spawns the backend, polls `/api/health` until ready, then loads th
 
 ## 🏗️ Architecture
 
-Three-layer process model (see [`docs/求职投递项目_架构设计_v0.2.md`](docs/求职投递项目_架构设计_v0.2.md) for the full design):
+Three-layer process model (see [`docs/architecture-design-v0.2.md`](docs/architecture-design-v0.2.md) for the full design):
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -139,7 +139,7 @@ Three-layer process model (see [`docs/求职投递项目_架构设计_v0.2.md`](
 
 ## 🔌 Backend API
 
-> Full reference in [`docs/求职投递项目_接口文档_v0.1.md`](docs/求职投递项目_接口文档_v0.1.md).
+> Full reference in [`docs/api-docs-v0.1.md`](docs/api-docs-v0.1.md).
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|

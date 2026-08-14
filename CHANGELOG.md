@@ -40,7 +40,7 @@ P1a resume material library + RAG knowledge base (P1 prerequisite research deliv
 ## [0.1.5] — 2026-08-06
 
 ### Added
-- **Docs**: interface spec v0.1 (`docs/求职投递项目_接口文档_v0.1.md`) — three-layer architecture overview, auth model, all 12 backend HTTP endpoints (index table / params / request-response / error codes), all 26 Electron IPC channels (index table / semantics), data model & schema migrations, config items, security baseline, revision history; cross-verified against the README endpoint table.
+- **Docs**: interface spec v0.1 (`docs/api-docs-v0.1.md`) — three-layer architecture overview, auth model, all 12 backend HTTP endpoints (index table / params / request-response / error codes), all 26 Electron IPC channels (index table / semantics), data model & schema migrations, config items, security baseline, revision history; cross-verified against the README endpoint table.
 
 ## [0.1.4] — 2026-08-06
 

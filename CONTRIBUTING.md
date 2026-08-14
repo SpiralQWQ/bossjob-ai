@@ -43,7 +43,7 @@ Open an [issue](https://github.com/SpiralQWQ/bossjob-ai/issues) with:
 Open a [discussion](https://github.com/SpiralQWQ/bossjob-ai/discussions) or an issue tagged `enhancement`:
 
 - Explain the problem you're solving (not just the feature name).
-- Sketch how it fits the existing architecture (see [docs/求职投递项目_架构设计_v0.2.md](docs/求职投递项目_架构设计_v0.2.md)).
+- Sketch how it fits the existing architecture (see [docs/architecture-design-v0.2.md](docs/architecture-design-v0.2.md)).
 
 ### Submitting Code
 

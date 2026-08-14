@@ -22,7 +22,7 @@ We aim to acknowledge reports within **48 hours** and to ship a fix in a timely 
 
 BossJobAI is a **local-first, privacy-first** desktop app. The threat model is: a malicious page/script in the renderer must not be able to read, exfiltrate, or tamper with local data or credentials.
 
-Key defenses (see [README § Security Baseline](README.md#security-baseline) and the [interface doc](docs/求职投递项目_接口文档_v0.1.md#7-安全基线)):
+Key defenses (see [README § Security Baseline](README.md#security-baseline) and the [interface doc](docs/api-docs-v0.1.md#7-安全基线)):
 
 - Electron: `contextIsolation=true`, `nodeIntegration=false`, `sandbox=true`; minimal preload API surface.
 - Backend: global Bearer-token auth (fail-closed, one-time token file), Host/Origin checks (DNS-rebinding / CSRF), CORS limited to localhost + `app://`.
