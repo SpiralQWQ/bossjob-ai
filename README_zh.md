@@ -6,6 +6,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/SpiralQWQ/bossjob-ai/ci.yml?branch=master)](.github/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
+<p align="center"><kbd>中文</kbd> · <a href="README.md"><kbd>English</kbd></a></p>
+
 > **隐私优先的本地求职桌面应用。** 简历、投递、面试、Offer 全程本地管理——无云端、无账号、数据只属于你自己。
 >
 > **当前为手动记录管理版（v0.1）：** 一个面向非技术背景求职者的 **Electron 桌面应用**，简历 / 投递记录均在本地维护（简历为本地表单录入、投递为人工登记改状态）。BOSS直聘 线上自动化（解析/匹配/自动投递）**规划中、尚未上线**，详见[路线图](#路线图)。

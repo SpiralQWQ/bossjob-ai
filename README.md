@@ -6,6 +6,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/SpiralQWQ/bossjob-ai/ci.yml?branch=master)](.github/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
+<p align="center"><kbd>English</kbd> · <a href="README_zh.md"><kbd>中文</kbd></a></p>
+
 > **Privacy-first local desktop app for job seekers.** Track applications, interviews, and offers locally — no cloud, no account, your data stays on your machine.
 >
 > **Manual tracking edition:** an Electron desktop app for non-technical job seekers. Resumes & application records are maintained locally (resume = local form entry, applications = manual status updates). BOSS直聘 online automation (parsing, matching, auto-apply) is **planned but not yet integrated** — see [Roadmap](#roadmap).
