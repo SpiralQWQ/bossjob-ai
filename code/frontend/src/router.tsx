@@ -1,11 +1,17 @@
+import { lazy, Suspense } from 'react';
 import { createHashRouter, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Layout, Menu, Typography } from 'antd';
-import Dashboard from './pages/Dashboard';
-import Settings from './pages/Settings';
-import { JobsPage, TrackerPage } from './pages/DataViews';
-import ApplyPage from './pages/ApplyPage';
-import ResumePage from './pages/ResumePage';
-import InterviewPage from './pages/InterviewPage';
+import { Layout, Menu, Spin, Typography, theme } from 'antd';
+import ThemeSwitch from './components/ThemeSwitch';
+import { AppIcon } from './components/AppIcon';
+import GlobalSearch from './components/GlobalSearch';
+// 路由懒加载（code-split）：每个页面独立 chunk，首屏只加载当前路由，antd 等 vendor 走 manualChunks
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Settings = lazy(() => import('./pages/Settings'));
+const JobsPage = lazy(() => import('./pages/DataViews').then((m) => ({ default: m.JobsPage })));
+const TrackerPage = lazy(() => import('./pages/DataViews').then((m) => ({ default: m.TrackerPage })));
+const ApplyPage = lazy(() => import('./pages/ApplyPage'));
+const ResumePage = lazy(() => import('./pages/ResumePage'));
+const InterviewPage = lazy(() => import('./pages/InterviewPage'));
 
 const { Sider, Header, Content } = Layout;
 
@@ -24,21 +30,22 @@ const { Sider, Header, Content } = Layout;
  * 简历解析、岗位库抓取、自动投递等 AI 自动化能力均在规划中，入口文案明确标注「手动」，不暗示已实现 AI 功能。
  */
 
-/** 菜单与路由对应关系（key 即路由 path，label 即侧边栏文案，title 为悬停提示）。 */
+/** 菜单与路由对应关系（key 即路由 path，label 即侧边栏文案，icon 统一走 AppIcon 注册表，title 为悬停提示）。 */
 const MENU_ITEMS = [
-  { key: '/', label: '工作台' },
-  { key: '/resume', label: '简历（手动记录）' },
-  { key: '/jobs', label: '投递记录（全部）' },
-  { key: '/apply', label: '投递（手动登记）' },
-  { key: '/interview', label: '面试', title: '面试登记：登记/查看「面试中」记录（时间/形式/备注）' },
-  { key: '/tracker', label: '看板' },
-  { key: '/settings', label: '设置' },
+  { key: '/', label: '工作台', icon: <AppIcon name="home" /> },
+  { key: '/resume', label: '简历（手动记录）', icon: <AppIcon name="resume" /> },
+  { key: '/jobs', label: '投递记录（全部）', icon: <AppIcon name="jobs" /> },
+  { key: '/apply', label: '投递（手动登记）', icon: <AppIcon name="apply" /> },
+  { key: '/interview', label: '面试', icon: <AppIcon name="interview" />, title: '面试登记：登记/查看「面试中」记录（时间/形式/备注）' },
+  { key: '/tracker', label: '看板', icon: <AppIcon name="tracker" /> },
+  { key: '/settings', label: '设置', icon: <AppIcon name="settings" /> },
 ];
 
 /** 全局导航外壳：侧边栏菜单 + 内容区 Outlet。 */
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { token } = theme.useToken();
   // 高亮当前路由对应菜单项；未命中（如未知路径）时回退高亮工作台
   const selectedKey = MENU_ITEMS.some((i) => i.key === location.pathname) ? location.pathname : '/';
   return (
@@ -55,7 +62,7 @@ function AppLayout() {
       <Layout>
         <Header
           style={{
-            background: '#fff',
+            background: token.colorBgContainer,
             padding: '0 24px',
             display: 'flex',
             alignItems: 'center',
@@ -68,10 +75,17 @@ function AppLayout() {
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             当前为手动记录管理，简历解析 / 岗位库抓取 / 自动投递等 AI 自动化功能规划中
           </Typography.Text>
+          <div style={{ marginLeft: 'auto' }}>
+            <ThemeSwitch />
+          </div>
         </Header>
         <Content style={{ padding: 24 }}>
-          <Outlet />
+          <Suspense fallback={<Spin style={{ display: 'block', margin: '48px auto' }} />}>
+            <Outlet />
+          </Suspense>
         </Content>
+        {/* 全局搜索（Cmd+K）挂在所有页面之上 */}
+        <GlobalSearch />
       </Layout>
     </Layout>
   );

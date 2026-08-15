@@ -30,6 +30,8 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:__BACKEND_PORT__ http://localhost:5173 ws://localhost:5173 ws://127.0.0.1:5173; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     />
     <title>BossJobAI 求职投递助手</title>
+    <!-- 主题防闪 bootstrap：React 挂载前同步持久化主题（外部脚本，script-src 'self' 放行；逻辑见 public/theme-bootstrap.js） -->
+    <script src="/theme-bootstrap.js"></script>
   </head>
   <body>
     <div id="root"></div>

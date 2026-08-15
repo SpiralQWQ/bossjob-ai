@@ -119,6 +119,18 @@ const strictCspDev = {
 export default defineConfig({
   plugins: [react(), strictCspBuild, strictCspDev],
   base: './',
+  build: {
+    // code-split（遗留-2）：react 全家桶拆独立 vendor；antd 不显式拆分——
+    // vite5 + antd5 默认 ESM tree-shaking 按需摇树（全量锁单 chunk 反而阻止摇树）。
+    // 页面已路由懒加载（router.tsx），首屏只加载 react-vendor + 当前页面 chunk。
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,

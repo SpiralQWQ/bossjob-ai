@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getBaseUrl } from '../lib/baseUrl';
 import { openLogsModal, useUrlHostWarning } from '../lib/applyShared';
-import { createApplication } from '../lib/useBackendBase';
+import { createApplication, probeHealth } from '../lib/useBackendBase';
 import { copyLink, renderApplicationDetail, useApplicationsStore, DataTools, type ApplicationInput, type ApplicationItem } from './DataViews';
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../constants';
 import { STATUS_TEXT, STATUS_COLOR } from '../lib/applyStatus';
@@ -88,7 +88,7 @@ export default function ApplyPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   // 最近一次行内改状态记录（供「撤销」使用）：行内 Select 把记录改成非 pending 会将其移出待投递队列，
   // 误操作后用户可一键改回「待反馈」恢复队列位置（交互死胡同修复：明确告知 + 可撤销）。
-  const [lastStatusChange, setLastStatusChange] = useState<{ id: number; jobTitle: string; next: string } | null>(null);
+  const [lastStatusChange, setLastStatusChange] = useState<{ id: number; jobTitle: string; next: string; prevPage: number } | null>(null);
   // 后端就绪信号计数器：主进程推送 backend-ready 时自增，驱动下方 fetch effect 重新拉取待投递队列
   // （对齐 JobsPage/TrackerPage 的 onBackendReady 自愈机制，避免 ready 后列表停留在陈旧/空状态）。
   const [backendReady, setBackendReady] = useState(0);
@@ -104,6 +104,9 @@ export default function ApplyPage() {
   const openCreateModal = (backfillResume = false) => {
     form.resetFields();
     setEditingId(null);
+    // 与 JobsPage 新建一致：投递时间预填当前时间（可在弹窗内改为历史日期），
+    // 避免经「登记投递」新建的记录普遍无投递时间（日期筛选/趋势图/时间列缺失）。
+    form.setFieldsValue({ applied_at: dayjs() });
     // 数据孤岛修复：打开登记表单时读取简历页本地整份简历——自动回填期望城市/薪资（非 PII），用户无需重复填写。
     const resume = loadResumeFull();
     if (resume) {
@@ -300,7 +303,7 @@ export default function ApplyPage() {
       } else {
         // 交互死胡同修复：本页恒为待投递队列，改成非 pending 会立即移出队列——
         // 明确把目标状态名写进 toast，并记录最近改动以提供一键撤销，避免误选「Offer/被拒」后不知哪条被改走。
-        setLastStatusChange({ id: record.id, jobTitle: record.job_title, next });
+        setLastStatusChange({ id: record.id, jobTitle: record.job_title, next, prevPage: page });
         message.success(`已将「${record.job_title}」标记为「${nextText}」，已移出待投递队列`);
       }
       // 当前页只剩这一条且非第一页时，改状态会使本页清空，回退一页避免空页。
@@ -318,7 +321,7 @@ export default function ApplyPage() {
   /** 撤销最近一次行内改状态：把误改出的记录 PATCH 回「待反馈」，恢复其在待投递队列中的位置。 */
   const handleUndoStatusChange = async () => {
     if (!baseUrl || !lastStatusChange) return;
-    const { id, jobTitle } = lastStatusChange;
+    const { id, jobTitle, prevPage } = lastStatusChange;
     try {
       const res = await fetch(`${baseUrl}/api/applications/${id}`, {
         method: 'PATCH',
@@ -332,7 +335,14 @@ export default function ApplyPage() {
       }
       setLastStatusChange(null);
       message.success(`已撤销：「${jobTitle}」恢复为「待反馈」`);
-      void fetchList(baseUrl, { status: 'pending', page, pageSize, keyword });
+      // 撤销后记录按 applied_at DESC/id DESC 回到原排序位置（即改状态回退前的页码）。
+      // 若改状态时因末页唯一记录回退了页码，这里必须回到 prevPage 重拉，否则记录在可见列表之外，
+      // 出现「撤销成功但看不到该记录」的分页不一致。
+      if (prevPage !== page) {
+        setPage(prevPage);
+      } else {
+        void fetchList(baseUrl, { status: 'pending', page: prevPage, pageSize, keyword });
+      }
     } catch (err) {
       message.error(`撤销失败：${err instanceof Error ? err.message : String(err)}`);
     }
@@ -445,7 +455,7 @@ export default function ApplyPage() {
       title: '状态',
       dataIndex: 'status',
       width: 90,
-      render: (v: string) => <Badge color={STATUS_COLOR[v] ?? '#d9d9d9'} text={STATUS_TEXT[v] ?? v} />,
+      render: (v: string) => <Badge color={STATUS_COLOR[v] ?? STATUS_COLOR.closed} text={STATUS_TEXT[v] ?? v} />,
     },
     {
       title: '链接',
@@ -531,7 +541,14 @@ export default function ApplyPage() {
               <Button
                 onClick={() => {
                   void getBaseUrl()
-                    .then((url) => setBaseUrl(url))
+                    .then(async (url) => {
+                      // 与 useBackendBase.reload 同口径：探活 /api/health 成功才切 base（后端宕机保持错误态）
+                      if (await probeHealth(url)) {
+                        setBaseUrl(url);
+                      } else {
+                        setBaseUrl('');
+                      }
+                    })
                     .catch(() => setBaseUrl(''));
                   setBackendReady((n) => n + 1);
                 }}

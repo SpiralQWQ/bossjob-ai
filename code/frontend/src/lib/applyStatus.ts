@@ -4,14 +4,16 @@
  * 一份同内容常量，改状态枚举/颜色需改三处、易静默漂移；集中到此共享模块，页面统一 import。
  */
 
-/** 投递状态 → Badge 颜色。 */
+import { STATUS_HEX } from '../theme/designTokens';
+
+/** 投递状态 → Badge 颜色（色值唯一真源 designTokens.STATUS_HEX；换色只改那里，亮暗可读性统一）。 */
 export const STATUS_COLOR: Record<string, string> = {
-  pending: '#1677ff',
-  replied: 'blue',
-  interview: 'gold',
-  offer: 'green',
-  rejected: 'red',
-  closed: '#d9d9d9',
+  pending: STATUS_HEX.pending,
+  replied: STATUS_HEX.replied,
+  interview: STATUS_HEX.interview,
+  offer: STATUS_HEX.offer,
+  rejected: STATUS_HEX.rejected,
+  closed: STATUS_HEX.closed,
 };
 
 /** 投递状态 → 文案。 */

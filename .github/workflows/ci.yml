@@ -1,53 +1,41 @@
+# CI 质量护栏（BossJobAI 前端 + Electron）
+# 位置：同步到开源仓库根 `.github/workflows/ci.yml`（SpiralQWQ/bossjob-ai）即自动生效；
+# 本文件放在本地 code/.github 作为模板/交付物。每次 push/PR 自动跑：单测 → 构建(含 verify-csp) → 禁硬编码色 → 白名单。
 name: CI
 
 on:
   push:
     branches: [master]
   pull_request:
-    branches: [master]
 
 jobs:
-  verify:
-    name: Build & security gates
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+  frontend:
+    runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: |
-            code/frontend/package-lock.json
-            code/electron/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
 
-      # ---- Frontend: install + build (tsc && vite build && verify-csp) ----
-      - name: Frontend build + CSP gate
-        working-directory: code/frontend
-        run: |
-          npm ci
-          npm run build
+      - name: Unit tests
+        working-directory: frontend
+        run: npm test
 
-      # ---- Electron: endpoint-whitelist regression gate ----
-      - name: Endpoint-whitelist regression gate
-        working-directory: code/electron
-        run: node scripts/verify-endpoint-whitelist.cjs
+      - name: Build (tsc + vite + verify-csp)
+        working-directory: frontend
+        run: npm run build
 
-      # ---- Backend: Python syntax gate ----
-      - name: Backend syntax gate
-        working-directory: code/backend
-        run: |
-          python -m compileall -q app
+      - name: No hardcoded colors (DESIGN §10)
+        working-directory: frontend
+        run: npm run verify:colors
 
-      # ---- Docs: relative-link sanity check (Markdown only) ----
-      - name: Docs link sanity check
-        run: python .github/scripts/check-doc-links.py
+      - name: Endpoint whitelist
+        working-directory: electron
+        run: npm run verify:whitelist

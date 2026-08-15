@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -18,7 +19,8 @@ import {
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settingsStore';
-import type { AppSettings } from '../stores/settingsStore';
+import type { AppSettings, ThemeMode } from '../stores/settingsStore';
+import { PRESET_COLORS } from '../theme/designTokens';
 import { getBaseUrl } from '../lib/baseUrl';
 import { DAILY_LIMIT_DEFAULTS } from '../constants';
 
@@ -27,6 +29,15 @@ const { Title } = Typography;
 /** 随机投递间隔（秒）默认下限/上限：表单回填、保存归一化、界面提示统一引用，禁止散落魔数。 */
 const INTERVAL_DEFAULT_MIN = 45;
 const INTERVAL_DEFAULT_MAX = 120;
+
+/** 主色预设中文名（设置页「外观」展示，与 designTokens.PRESET_COLORS 键对齐）。 */
+const PRESET_LABELS: Record<keyof typeof PRESET_COLORS, string> = {
+  blue: '品牌蓝',
+  cyan: '天青',
+  teal: '青绿',
+  violet: '紫罗兰',
+  amber: '琥珀',
+};
 
 /** 配置编辑表单字段（api_key 为只写字段，绝不从 GET 接口回显）。 */
 interface SettingsFormValues {
@@ -203,7 +214,11 @@ function BackupSettingsCard() {
                 min={1}
                 max={60}
                 value={maxBackups}
-                onChange={(v) => setMaxBackups(Number(v) || 7)}
+                onChange={(v) => {
+                  // 空值（清空输入）不更新：避免静默重置为默认 7 并同步进模块级槽随主保存落盘（隐性配置变更）
+                  // 0/非数归一为下限 1（而非默认 7），并钳到 [1,60] + 取整（round2-⑤ 与 intervalMinutes 钳制口径一致）
+                  if (v != null) setMaxBackups(Math.min(60, Math.max(1, Math.round(Number(v)) || 1)));
+                }}
                 style={{ width: 90 }}
               />
             </Space>
@@ -213,7 +228,10 @@ function BackupSettingsCard() {
                 min={1}
                 max={1440}
                 value={intervalMinutes}
-                onChange={(v) => setIntervalMinutes(v ?? null)}
+                onChange={(v) =>
+                  // 与 maxBackups 同口径：钳到 [1,1440] + 取整，避免 1.5/5000 等主进程校验会拒绝的死值；null=取消定时保留
+                  setIntervalMinutes(v != null ? Math.min(1440, Math.max(1, Math.round(Number(v)))) : null)
+                }
                 style={{ width: 110 }}
               />
             </Space>
@@ -252,6 +270,11 @@ export default function Settings() {
   const saving = useSettingsStore((s) => s.saving);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
+  // 本地 UI 状态（持久化，不进后端配置）
+  const themeMode = useSettingsStore((s) => s.themeMode);
+  const setThemeMode = useSettingsStore((s) => s.setThemeMode);
+  const accentColor = useSettingsStore((s) => s.accentColor);
+  const setAccentColor = useSettingsStore((s) => s.setAccentColor);
 
   // 解析后端端口得到 baseUrl（模块级缓存，整段会话复用首次 IPC 结果）。
   // 抽成稳定回调：成功时设置 baseUrl；失败时设置 error 并关闭 loading。
@@ -365,7 +388,11 @@ export default function Settings() {
         cities: values.cities ?? [],
         llm,
         apply: {
-          daily_limit: Number(values.apply_daily_limit) || DAILY_LIMIT_DEFAULTS.fallback,
+          // 保存前钳制到 [min,max]：InputNumber 的 min/max 不阻止手输超界值，超界落盘会与后端/投递引擎约束不一致
+          daily_limit: Math.min(
+            DAILY_LIMIT_DEFAULTS.max,
+            Math.max(DAILY_LIMIT_DEFAULTS.min, Number(values.apply_daily_limit) || DAILY_LIMIT_DEFAULTS.fallback),
+          ),
           interval_seconds: interval,
           halt_on_risk: !!values.apply_halt_on_risk,
         },
@@ -456,17 +483,22 @@ export default function Settings() {
 
   if (error) {
     return (
-      <Card style={{ maxWidth: 720, margin: '24px auto' }} title="配置设置">
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert type="error" showIcon message={error} />
-          <Space>
-            <Button type="primary" onClick={() => void reload()}>
-              重试
-            </Button>
-            <Button onClick={() => navigate('/')}>返回工作台</Button>
+      <>
+        <Card style={{ maxWidth: 720, margin: '24px auto' }} title="配置设置">
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Alert type="error" showIcon message={error} />
+            <Space>
+              <Button type="primary" onClick={() => void reload()}>
+                重试
+              </Button>
+              <Button onClick={() => navigate('/')}>返回工作台</Button>
+            </Space>
           </Space>
-        </Space>
-      </Card>
+        </Card>
+        {/* 备份配置仅依赖主进程 IPC（window.api.getBackupInfo/updateBackupSettings），后端离线仍可用——
+            与 DataViews「数据工具条离线可用」承诺一致，不随后端 error 分支隐藏。 */}
+        <BackupSettingsCard />
+      </>
     );
   }
 
@@ -481,6 +513,50 @@ export default function Settings() {
         </Space>
       }
     >
+      <Card size="small" title="外观" style={{ marginBottom: 16 }}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <div>
+            <Typography.Text strong>主题模式</Typography.Text>
+            <div style={{ marginTop: 8 }}>
+              <Segmented
+                value={themeMode}
+                onChange={(v) => setThemeMode(v as ThemeMode)}
+                options={[
+                  { label: '跟随系统', value: 'system' },
+                  { label: '亮色', value: 'light' },
+                  { label: '暗色', value: 'dark' },
+                ]}
+              />
+            </div>
+          </div>
+          <div>
+            <Typography.Text strong>主色</Typography.Text>
+            <div style={{ marginTop: 8 }}>
+              <Segmented
+                value={accentColor}
+                onChange={(v) => setAccentColor(String(v))}
+                options={Object.entries(PRESET_COLORS).map(([key, color]) => ({
+                  label: (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 6,
+                          background: color,
+                          display: 'inline-block',
+                        }}
+                      />
+                      {PRESET_LABELS[key as keyof typeof PRESET_COLORS]}
+                    </span>
+                  ),
+                  value: color,
+                }))}
+              />
+            </div>
+          </div>
+        </Space>
+      </Card>
       <Form<SettingsFormValues>
         form={form}
         layout="vertical"

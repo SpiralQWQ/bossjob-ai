@@ -2,6 +2,22 @@ import { useEffect, useState } from 'react';
 import { getBaseUrl } from './baseUrl';
 
 /**
+ * 探活后端 /api/health：HTTP ok + 响应体 status==='ok' 才算就绪（与 Dashboard.checkBackend 同口径）。
+ * 供 useBackendBase.reload 与 ApplyPage/InterviewPage 的「重新连接」按钮共用，
+ * 消除跨页探活语义分歧（殊途同归必须同果：所有重连入口都先探活成功才切 base）。
+ */
+export async function probeHealth(url: string): Promise<boolean> {
+  try {
+    const probe = await fetch(`${url}/api/health`);
+    if (!probe.ok) return false;
+    const h = (await probe.json().catch(() => null)) as { status?: string } | null;
+    return !!h && h.status === 'ok';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 统一的后端请求封装：所有「写操作」API（新增/登记/更新/删除）共用同一套
  * fetch + `!ok → json().catch(()=>null) → 错误串` + catch 兜底逻辑，避免四处复制。
  * 返回 null=成功，否则返回错误信息字符串。
@@ -100,7 +116,16 @@ export function useBackendBase(): {
   // 语义与 onBackendReady / 窗口聚焦自愈一致，供 baseUrl==='' 分支页内兜底（无需重启应用）。
   const reload = () => {
     getBaseUrl()
-      .then((url) => setBase(url))
+      .then(async (url) => {
+        // 与 Dashboard checkBackend 同口径：先探活 /api/health 并校验响应体 status==='ok'，成功才切 base。
+        // 否则后端仍宕机/响应异常时会把 baseUrl 从 '' 错误态切回缓存 URL，页面从清晰的
+        // 「无法连接后端」翻转为列表级通用拉取错误（恢复只能靠窗口聚焦/onBackendReady，违背「就绪才置 base」语义）。
+        if (await probeHealth(url)) {
+          setBase(url);
+        } else {
+          setBase('');
+        }
+      })
       .catch(() => setBase(''));
     setRefreshToken((n) => n + 1);
   };

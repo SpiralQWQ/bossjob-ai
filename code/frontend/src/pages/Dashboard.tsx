@@ -3,6 +3,8 @@ import { Alert, Badge, Button, Card, Descriptions, Skeleton, Space, Typography }
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getBaseUrl } from '../lib/baseUrl';
+import { AppIcon } from '../components/AppIcon';
+import PageHero from '../components/PageHero';
 const { Title } = Typography;
 
 // 后端健康轮询（含重试）统一由主进程 waitBackendReadyOrRetry 完成，就绪/失败经 backend-ready /
@@ -193,13 +195,26 @@ export default function Dashboard() {
   }, [checkBackend]);
 
   return (
-    <Card
-      style={{ maxWidth: 720, margin: '24px auto' }}
-      title={<Title level={4} style={{ margin: 0 }}>工作台</Title>}
-      extra={<Button onClick={() => navigate('/settings')}>配置设置</Button>}
-    >
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <Card size="small" title="后端状态">
+    <>
+      <PageHero
+        title="求职投递助手"
+        description="管理你的投递 / 面试 / 简历；岗位库抓取、自动投递等 AI 自动化功能规划中"
+        actions={
+          <Space wrap>
+            <Button type="primary" onClick={() => navigate('/apply', { state: { openApplyModal: true } })} icon={<AppIcon name="applyAdd" />}>登记投递</Button>
+            <Button onClick={() => navigate('/jobs')} icon={<AppIcon name="jobs" />}>投递记录</Button>
+            <Button onClick={() => navigate('/resume')} icon={<AppIcon name="resume" />}>简历</Button>
+            <Button onClick={() => navigate('/tracker')} icon={<AppIcon name="tracker" />}>看板</Button>
+          </Space>
+        }
+      />
+      <Card
+        style={{ maxWidth: 720, margin: '0 auto 24px' }}
+        title={<Title level={4} style={{ margin: 0 }}>工作台</Title>}
+        extra={<Button onClick={() => navigate('/settings')}>配置设置</Button>}
+      >
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          <Card size="small" title="后端状态">
           <Descriptions column={1} size="small">
             <Descriptions.Item label="连接状态">
               <Badge status={STATUS_BADGE[status]} text={STATUS_TEXT[status]} />
@@ -229,13 +244,6 @@ export default function Dashboard() {
             </>
           )}
         </Card>
-
-        <Space wrap>
-          <Button type="primary" onClick={() => navigate('/apply', { state: { openApplyModal: true } })}>登记投递</Button>
-          <Button onClick={() => navigate('/jobs')}>投递记录</Button>
-          <Button onClick={() => navigate('/resume')}>简历</Button>
-          <Button onClick={() => navigate('/tracker')}>看板</Button>
-        </Space>
 
         <Card size="small" title="目标城市">
           {settingsLoading ? (
@@ -275,6 +283,7 @@ export default function Dashboard() {
           )}
         </Card>
       </Space>
-    </Card>
+      </Card>
+    </>
   );
 }

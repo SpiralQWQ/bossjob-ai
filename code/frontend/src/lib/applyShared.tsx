@@ -125,14 +125,14 @@ export async function openLogsModal(baseUrl: string, record: LoggableRecord): Pr
       content: (
         <div style={{ maxHeight: 360, overflowY: 'auto' }}>
           {items.map((log) => (
-            <div key={log.id} style={{ padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+            <div key={log.id} style={{ padding: '8px 0' }}>
               <Space>
                 <Typography.Text type="secondary">
                   {log.created_at.replace('T', ' ').slice(0, 19)}
                 </Typography.Text>
-                <Badge color="#1677ff" text={log.action} />
+                <Badge color="blue" text={log.action} />
               </Space>
-              <div style={{ color: 'rgba(0,0,0,0.88)', whiteSpace: 'pre-wrap' }}>{log.detail}</div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{log.detail}</div>
             </div>
           ))}
         </div>

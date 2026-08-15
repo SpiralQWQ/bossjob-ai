@@ -5,6 +5,7 @@ import type { TableProps } from 'antd';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { getBaseUrl } from '../lib/baseUrl';
+import { probeHealth } from '../lib/useBackendBase';
 import { openLogsModal, useUrlHostWarning } from '../lib/applyShared';
 import { copyLink, renderApplicationDetail, useApplicationsStore, type ApplicationInput, type ApplicationItem } from './DataViews';
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../constants';
@@ -107,6 +108,8 @@ export default function InterviewPage() {
   // 仅改备注保存时不得把原手写时间清掉；字段曾被回填后显式清空才剥离。合并成一个布尔会误判。
   const wasInterviewTimeBackfilledRef = useRef(false);
   const wasInterviewFormBackfilledRef = useRef(false);
+  // round2-④：原「【面试登记】」块快照（openEditModal 写入），与回填标记同源同刻，供 handleSave 重建时用
+  const origBlockRef = useRef<{ time: string; form: string }>({ time: '', form: '' });
   // 原面试块存在「dayjs 无法解析的手写时间」文本（如「下周三」「尽快」）时，弹窗内提供「移除」入口：
   // DatePicker 无法承载这类文本（回填为空），无此按钮则该手写时间永远无法通过 UI 删除（只能替换）。
   const [hasUnparseableTime, setHasUnparseableTime] = useState(false);
@@ -119,7 +122,7 @@ export default function InterviewPage() {
   const [backendReady, setBackendReady] = useState(0);
   // 最近一次行内改状态记录（供「撤销」使用）：行内 Select 把记录改成非「面试中」会立即移出本列表，
   // 误操作后用户可一键改回「面试中」恢复列表位置（与 ApplyPage 的撤销机制对齐，消除交互死胡同）。
-  const [lastStatusChange, setLastStatusChange] = useState<{ id: number; jobTitle: string; next: string } | null>(null);
+  const [lastStatusChange, setLastStatusChange] = useState<{ id: number; jobTitle: string; next: string; prevPage: number } | null>(null);
   // 批量操作选中的行 id 集合（对齐 JobsPage/ApplyPage 的 rowSelection + 批量改状态/批量删除工作流）。
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   // 分页/每页条数/搜索词变化时清空已选行（对齐 JobsPage/ApplyPage）：fetchList 刷新后 rows 跨页/跨筛选移动，
@@ -176,11 +179,18 @@ export default function InterviewPage() {
     if (baseUrl) void fetchList(baseUrl, { status: 'interview', page, pageSize, keyword });
   }, [baseUrl, page, pageSize, keyword, fetchList, backendReady]);
 
-  /** 打开「登记面试」弹窗：新建记录默认状态为「面试中」。 */
+  /** 打开「登记面试」弹窗：新建记录默认状态为「面试中」；投递时间预填当前时间（与 JobsPage 新建一致，
+   *  避免新建记录无投递时间）。同时重置瞬态编辑态（与 openEditModal 对称），避免编辑残留的
+   *  「无法解析手写时间 / 移除手写时间」警示在新建弹窗错误渲染。 */
   const openCreateModal = () => {
     form.resetFields();
     setEditingId(null);
-    form.setFieldsValue({ status: 'interview' });
+    form.setFieldsValue({ status: 'interview', applied_at: dayjs() });
+    setHasUnparseableTime(false);
+    setRemoveHandwrittenTime(false);
+    wasInterviewTimeBackfilledRef.current = false;
+    wasInterviewFormBackfilledRef.current = false;
+    origBlockRef.current = { time: '', form: '' };
     setModalOpen(true);
   };
 
@@ -189,6 +199,7 @@ export default function InterviewPage() {
   const openEditModal = (record: ApplicationItem) => {
     setEditingId(record.id);
     const block = parseInterviewBlock(record.note);
+    origBlockRef.current = block;  // 快照原块，供 handleSave 重建时用（与回填标记同源同刻）
     const dt = block.time ? dayjs(block.time) : undefined;
     // 分别记录面试时间/形式是否成功回填到表单：原块时间可能是手写格式（如「下周三」）
     // dayjs 无法解析 → 时间未回填、形式回填。handleSave 据此区分「从未回填（保留原手写时间）」
@@ -240,8 +251,10 @@ export default function InterviewPage() {
     // 仅在确有面试输入时重建「【面试登记】」段：编辑时用户显式清空面试字段即删除结构化段（不再粘滞重建占位块），
     // buildInterviewNote 空值省略行，避免「时间：—」占位被误当真实时间。
     const hasInterviewInput = Boolean(values.interviewTime || values.interviewForm);
-    const originalNote = editingId !== null ? items.find((i) => i.id === editingId)?.note : undefined;
-    const orig = originalNote && originalNote.includes(INTERVIEW_TAG) ? parseInterviewBlock(originalNote) : { time: '', form: '' };
+    // orig 来自 openEditModal 时刻的快照（origBlockRef），与 timeBackfilled/formBackfilled 标记同源同刻：
+    // 避免保存时刻用 items.find 重新解析（编辑记录可能已不在当前页 items 中 → orig 回退为空）导致
+    // 「从未回填、应保留」的手写面试时间被静默丢弃（round2-④ 状态一致性）。
+    const orig = editingId !== null ? origBlockRef.current : { time: '', form: '' };
     // 时间/形式各自的回填标记（openEditModal 写入）：区分「从未回填（保留原手写时间/形式）」
     // 与「曾被回填、用户显式清空（剥离）」。合并成一个布尔会把「时间手写无法解析但形式已回填」
     // 误判为整体已回填，仅改备注保存时静默丢失原手写时间。
@@ -256,7 +269,7 @@ export default function InterviewPage() {
       : (editingId !== null && !timeBackfilled && orig.time && !removeHandwrittenTime ? orig.time : '');
     // 形式：用户选了新形式用新值；未选且原形式从未回填 → 保留原形式；曾被回填后清空 → 空（剥离）。
     const newForm = values.interviewForm ?? (editingId !== null && !formBackfilled ? orig.form : '');
-    if (hasInterviewInput || (editingId !== null && originalNote && originalNote.includes(INTERVIEW_TAG) && (newTimeStr || newForm))) {
+    if (hasInterviewInput || (editingId !== null && (orig.time || orig.form) && (newTimeStr || newForm))) {
       // 本次有输入、或原块仍保留有效时间/形式（含从未回填的手写值）→ 重建（合并备注编辑）
       note = buildInterviewNote(newTimeStr, newForm, values.note ?? '');
     } else {
@@ -359,7 +372,7 @@ export default function InterviewPage() {
       } else {
         // 本页恒为「面试中」筛选：改成非 interview 会立即移出本列表——
         // 记录最近改动以提供一键撤销（与 ApplyPage 一致），避免误选后不知哪条被改走。
-        setLastStatusChange({ id: record.id, jobTitle: record.job_title, next });
+        setLastStatusChange({ id: record.id, jobTitle: record.job_title, next, prevPage: page });
         message.success(`已将「${record.job_title}」标记为「${nextText}」，已移出面试列表`);
       }
       const nextPage = items.length === 1 && page > 1 ? page - 1 : page;
@@ -376,7 +389,7 @@ export default function InterviewPage() {
   /** 撤销最近一次行内改状态：把误改出的记录 PATCH 回「面试中」，恢复其在面试列表中的位置。 */
   const handleUndoStatusChange = async () => {
     if (!baseUrl || !lastStatusChange) return;
-    const { id, jobTitle } = lastStatusChange;
+    const { id, jobTitle, prevPage } = lastStatusChange;
     try {
       const res = await fetch(`${baseUrl}/api/applications/${id}`, {
         method: 'PATCH',
@@ -390,7 +403,13 @@ export default function InterviewPage() {
       }
       setLastStatusChange(null);
       message.success(`已撤销：「${jobTitle}」恢复为「面试中」`);
-      void fetchList(baseUrl, { status: 'interview', page, pageSize, keyword });
+      // 撤销后记录按 applied_at DESC/id DESC 回到原排序位置（即改状态回退前的页码）。
+      // 若改状态时因末页唯一记录回退了页码，这里必须回到 prevPage 重拉，否则记录在可见列表之外。
+      if (prevPage !== page) {
+        setPage(prevPage);
+      } else {
+        void fetchList(baseUrl, { status: 'interview', page: prevPage, pageSize, keyword });
+      }
     } catch (err) {
       message.error(`撤销失败：${err instanceof Error ? err.message : String(err)}`);
     }
@@ -577,7 +596,7 @@ export default function InterviewPage() {
       title: '状态',
       dataIndex: 'status',
       width: 90,
-      render: (v: string) => <Badge color={STATUS_COLOR[v] ?? '#d9d9d9'} text={STATUS_TEXT[v] ?? v} />,
+      render: (v: string) => <Badge color={STATUS_COLOR[v] ?? STATUS_COLOR.closed} text={STATUS_TEXT[v] ?? v} />,
     },
     { title: '备注', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
     {
@@ -646,7 +665,14 @@ export default function InterviewPage() {
               <Button
                 onClick={() => {
                   void getBaseUrl()
-                    .then((url) => setBaseUrl(url))
+                    .then(async (url) => {
+                      // 与 useBackendBase.reload 同口径：探活 /api/health 成功才切 base（后端宕机保持错误态）
+                      if (await probeHealth(url)) {
+                        setBaseUrl(url);
+                      } else {
+                        setBaseUrl('');
+                      }
+                    })
                     .catch(() => setBaseUrl(''));
                   setBackendReady((n) => n + 1);
                 }}

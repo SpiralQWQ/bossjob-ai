@@ -1,6 +1,6 @@
 {
   "name": "boss-job-ai-frontend",
-  "version": "0.1.7",
+  "version": "0.1.17",
   "private": true,
   "description": "BOSS直聘 AI 求职助手 - 前端 (React + TS + Vite + Antd + Zustand)",
   "type": "module",
@@ -9,21 +9,31 @@
     "build": "tsc && vite build && node scripts/verify-csp.mjs",
     "verify:dist": "node scripts/verify-dist.mjs",
     "verify:csp": "node scripts/verify-csp.mjs",
-    "preview": "vite preview"
+    "verify:colors": "node scripts/verify-no-hardcoded-colors.mjs",
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.2",
+    "@tabler/icons-react": "^3.46.0",
+    "antd": "^5.20.0",
+    "dayjs": "^1.11.10",
+    "echarts": "^6.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
-    "zustand": "^4.5.4",
-    "antd": "^5.20.0",
-    "dayjs": "^1.11.10"
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
-    "vite": "^5.4.0",
-    "typescript": "^5.5.4",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.4",
     "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0"
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "jsdom": "^30.0.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^4.1.10"
   }
 }

@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import type { Key, ReactNode } from 'react';
+import type { Key } from 'react';
 import {
   Alert,
   Badge,
   Button,
-  Card,
-  Checkbox,
   DatePicker,
-  Descriptions,
   Empty,
   Form,
   Input,
@@ -17,734 +14,75 @@ import {
   Select,
   Skeleton,
   Space,
-  Statistic,
   Table,
   Typography,
+  theme,
 } from 'antd';
 import type { TableProps } from 'antd';
 import dayjs from 'dayjs';
-import { create } from 'zustand';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { apiCall, useBackendBase, createApplication } from '../lib/useBackendBase';
+import { useBackendBase, createApplication } from '../lib/useBackendBase';
 import { openLogsModal, useUrlHostWarning } from '../lib/applyShared';
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../constants';
 import { STATUS_TEXT, STATUS_COLOR, STATUS_OPTIONS } from '../lib/applyStatus';
+import StatCard from '../components/StatCard';
+import ChartCard from '../components/ChartCard';
+import BaseChart from '../components/charts/BaseChart';
+import { useChartPalette } from '../theme/chartTheme';
+import ColumnSettings from '../components/ColumnSettings';
+import { loadVisibleKeys, persistVisibleKeys, type ColumnDef } from '../lib/columnSettings';
+import { useTableUrlState } from '../hooks/useTableUrlState';
 
-const { Title } = Typography;
+/** 投递记录表列定义（列显隐设置面板用，key 与 Table columns 对齐）。 */
+const COLUMN_DEFS: ColumnDef[] = [
+  { key: 'job_title', title: '职位' },
+  { key: 'company', title: '公司' },
+  { key: 'city', title: '城市' },
+  { key: 'salary', title: '薪资' },
+  { key: 'status', title: '状态' },
+  { key: 'applied_at', title: '投递时间' },
+  { key: 'note', title: '备注' },
+  { key: 'action', title: '操作' },
+];
+// 瘦身解耦：共享类型抽离到 src/types/application.ts（本文件 re-export 保持外部 import 兼容）
+import type { ApplicationInput, ApplicationItem } from '../types/application';
+export type { ApplicationInput, ApplicationItem, ApplicationListResponse, StatsResponse } from '../types/application';
+// 瘦身解耦：store 抽离到 src/stores/applicationsStore.ts（re-export 保持外部 import 兼容）
+import { useApplicationsStore } from '../stores/applicationsStore';
+export { useApplicationsStore } from '../stores/applicationsStore';
 
 /** 把字节数格式化为人类可读大小（如 1.2 MB）；非有限数字返回空串。 */
-function formatBytes(bytes?: number): string {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let v = bytes;
-  let unit = 0;
-  while (v >= 1024 && unit < units.length - 1) {
-    v /= 1024;
-    unit += 1;
-  }
-  const text = v >= 100 ? v.toFixed(0) : v.toFixed(1);
-  return `${text} ${units[unit]}`;
-}
+// 瘦身解耦：共享工具抽离到 src/lib/applicationShared.tsx（re-export 保持外部 import 兼容）
+import { IMPORT_MAX_CHARS, confirmRestore, copyLink, deleteApplication, formatBytes, importApplications, renderApplicationDetail, updateApplication } from '../lib/applicationShared';
+export { confirmRestore, copyLink, deleteApplication, formatBytes, importApplications, renderApplicationDetail, updateApplication } from '../lib/applicationShared';
 
-/** 恢复确认弹窗：内置「仅恢复投递记录，保留当前设置/LLM 配置与简历」勾选项（默认关）。
- *  勾选时透传 includeSettings=false → 主进程仅覆盖 app.db（投递记录），保留当前 settings.json/LLM 配置与简历快照
- *  （含 external_url_hosts 白名单 / browser_user_data_dir / provider 重定向等，避免误破坏现有浏览器配置）；
- *  未勾选时按原逻辑恢复 settings.json（主进程安全剥离 LLM 密钥/白名单等，见 restoreSettingsSafely）并一并恢复简历快照。 */
-function confirmRestore(opts: {
-  title: string;
-  description: string;
-  /** 应用内备份列表给出的备份目录绝对路径（listBackups 的 path），缺省时走系统「打开目录」对话框。 */
-  dir?: string;
-  /** 成功 toast 前缀（含恢复来源说明）。 */
-  successLabel: string;
-}) {
-  let keepSettings = false; // 勾选「仅恢复投递记录」→ true → includeSettings=false
-  Modal.confirm({
-    title: opts.title,
-    content: (
-      <div>
-        <div style={{ fontSize: 13, lineHeight: '22px', marginBottom: 8 }}>{opts.description}</div>
-        <Checkbox onChange={(e) => { keepSettings = e.target.checked; }}>
-          仅恢复投递记录，保留当前设置/LLM 配置与简历
-        </Checkbox>
-      </div>
-    ),
-    okText: '确认恢复',
-    okButtonProps: { danger: true },
-    cancelText: '取消',
-    onOk: async () => {
-      if (!window.api?.restoreData) {
-        message.error(
-          'Electron preload 桥接（window.api.restoreData）不可用，请通过 Electron 启动应用。'
-        );
-        return;
-      }
-      try {
-        const result = await window.api.restoreData(
-          opts.dir ? { dir: opts.dir, includeSettings: !keepSettings } : { includeSettings: !keepSettings }
-        );
-        if (result.canceled) {
-          return; // 用户取消「选择备份目录」对话框
-        }
-        if (result.ok) {
-          // settingsStatus 为主进程对本次恢复中 settings.json 处理结果的如实汇报（统一词汇表：
-          // 'restored' | 'retained_credentials_stripped' | 'backup_missing' | 'parse_failed' | 'retained'）
-          const retainedTxt =
-            result.settingsStatus === 'retained_credentials_stripped'
-              ? '；配置已还原（当前 LLM 密钥已保留）'
-              : result.settingsStatus === 'parse_failed'
-                ? '；配置解析失败，已保留当前配置'
-                : result.settingsStatus === 'backup_missing'
-                  ? '；备份无配置，保留当前配置'
-                    : result.settingsStatus === 'retained'
-                      ? '；已保留当前配置'
-                      : result.settingsStatus === 'restored'
-                        ? '；配置已合并'
-                        : '';
-          // preRestoreSnapshot 为覆盖前自动快照（可回滚点）：透出名称告知用户误恢复时仍可从此备份回滚
-          const snapshotTxt = result.preRestoreSnapshot
-            ? `；已创建可回滚点：${result.preRestoreSnapshot.name}`
-            : '';
-          message.success(`${opts.successLabel}：${result.path ?? ''}${retainedTxt}${snapshotTxt}`);
-          // 恢复是破坏性覆盖，后端已重启完成；与 toast 生命周期解耦，稍后立即刷新让看板/列表展示还原后的数据
-          setTimeout(() => window.location.reload(), 300);
-        } else {
-          message.error(`恢复失败：${result.error ?? '未知错误'}`);
-        }
-      } catch (err) {
-        message.error(`恢复失败：${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-  });
-}
+// 瘦身解耦：DataPageCard/DataTools 抽离到 src/components/DataTools.tsx（re-export 保持外部兼容）
+import { DataPageCard, DataTools } from '../components/DataTools';
+export { DataPageCard, DataTools } from '../components/DataTools';
 
-/** GET /api/applications 单条记录（与后端 data 路由 ApplicationItem 对齐）。 */
-export interface ApplicationItem {
-  id: number;
-  job_title: string;
-  company: string;
-  city: string;
-  salary: string;
-  url: string;
-  status: string;
-  note: string;
-  applied_at: string | null;
-  updated_at: string;
-}
-
-/** GET /api/applications 分页响应。 */
-export interface ApplicationListResponse {
-  total: number;
-  page: number;
-  page_size: number;
-  items: ApplicationItem[];
-}
-
-/** GET /api/stats 响应。 */
-export interface StatsResponse {
-  total: number;
-  applying: number;
-  offer_count: number;
-  rejected: number;
-  pass_rate: number;
-  daily_trend: Array<{ date: string; count: number }>;
-}
-
-// 投递状态映射集中在 lib/applyStatus.ts（STATUS_TEXT/STATUS_COLOR/STATUS_OPTIONS 单一事实来源，
-// 与 ApplyPage/InterviewPage 共用，避免三处副本漂移）；下方引用由 import 提供。
-
-/** 展开行详情（JobsPage / ApplyPage 共用）：以 Descriptions 展示记录完整内容。
- *  备注列单行省略号截断，而 ApplyPage 登记时把整份简历快照（姓名/手机/邮箱/学历/技能/简介，多行）写入 note，
- *  展开行保留 pre-wrap 换行，让「投递记录可随时回看所用简历」真正可读，同时回显原始 applied_at / updated_at。 */
-export function renderApplicationDetail(record: ApplicationItem) {
-  return (
-    <Descriptions size="small" column={1} bordered style={{ maxWidth: 760 }}>
-      <Descriptions.Item label="职位">{record.job_title || '—'}</Descriptions.Item>
-      <Descriptions.Item label="公司">{record.company || '—'}</Descriptions.Item>
-      <Descriptions.Item label="城市">{record.city || '—'}</Descriptions.Item>
-      <Descriptions.Item label="薪资">{record.salary || '—'}</Descriptions.Item>
-      <Descriptions.Item label="状态">{STATUS_TEXT[record.status] ?? record.status ?? '—'}</Descriptions.Item>
-      <Descriptions.Item label="链接">{record.url || '—'}</Descriptions.Item>
-      <Descriptions.Item label="投递时间">
-        {record.applied_at ? record.applied_at.replace('T', ' ').slice(0, 19) : '—'}
-      </Descriptions.Item>
-      <Descriptions.Item label="更新时间">
-        {record.updated_at ? record.updated_at.replace('T', ' ').slice(0, 19) : '—'}
-      </Descriptions.Item>
-      <Descriptions.Item label="备注">
-        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{record.note || '—'}</div>
-      </Descriptions.Item>
-    </Descriptions>
-  );
-}
-
-// parseUrlHost / isHostAllowed 已复用 ../lib/applyShared 导出（见顶部 import），此处不再本地重复实现，避免漂移。
-
-/** 复制文本到剪贴板：优先 navigator.clipboard（需安全上下文，Electron 渲染进程通常可用），
- *  失败时降级 textarea + document.execCommand('copy') 兜底（旧内核 / 非安全上下文）。返回是否成功。 */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // 落入下方 execCommand 降级
-  }
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  // 移出可视区并隐藏，避免复制时闪现或触发滚动
-  textarea.style.position = 'fixed';
-  textarea.style.top = '-9999px';
-  textarea.style.opacity = '0';
-  try {
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    return document.execCommand('copy');
-  } catch {
-    return false;
-  } finally {
-    if (textarea.parentNode === document.body) {
-      document.body.removeChild(textarea);
-    }
-  }
-}
-
-/** 复制职位链接到剪贴板并按结果提示：成功 → 「职位链接已复制」，失败 → 提示手动复制。
- *  非 BOSS 白名单链接「打开」必失败，复制是唯一可行的取链方式（粘贴到简历 / 发给别人）。 */
-export async function copyLink(url: string) {
-  const ok = await copyToClipboard(url);
-  if (ok) {
-    message.success('职位链接已复制');
-  } else {
-    message.error('复制失败，请手动选择链接复制');
-  }
-}
-
-/** 业务数据 store：复用 settingsStore 的 fetch 模式（baseUrl 由调用方传入，禁止硬编码端口）。 */
-interface ApplicationsState {
-  items: ApplicationItem[];
-  total: number;
-  stats: StatsResponse | null;
-  loading: boolean;
-  listError: string | null;
-  statsError: string | null;
-  statsLoading: boolean;
-  fetchList: (baseUrl: string, params?: { page?: number; pageSize?: number; status?: string; keyword?: string; date?: { from?: string | null; to?: string | null } | null }) => Promise<void>;
-  fetchStats: (baseUrl: string) => Promise<void>;
-}
-
-/** 模块级单调计数器：防止 /apply 与 /jobs 并发 fetch 的过期响应覆盖最新 items/total/loading（与 dist 已修复的 index-zPZ0V-2j.js 一致）。 */
-let fetchListSeq = 0;
-let fetchStatsSeq = 0;
-
-export const useApplicationsStore = create<ApplicationsState>((set) => ({
-  items: [],
-  total: 0,
-  stats: null,
-  loading: false,
-  listError: null,
-  statsError: null,
-  statsLoading: false,
-  fetchList: async (baseUrl, params = {}) => {
-    const seq = ++fetchListSeq;
-    // 立即清空 items 并置 loading，避免路由切换后新挂载页（/jobs ↔ /apply）先渲染兄弟页的旧查询结果；
-    // 直到本次 fetch 解析完成前，表格展示空列表 + spinner 占位，而非陈旧的异页数据。
-    set({ items: [], total: 0, loading: true, listError: null });
-    try {
-      const qs = new URLSearchParams();
-      if (params.page) qs.set('page', String(params.page));
-      if (params.pageSize) qs.set('page_size', String(params.pageSize));
-      if (params.status) qs.set('status', params.status);
-      if (params.keyword) qs.set('keyword', params.keyword);
-      // 日期区间筛选：前端 RangePicker 以 { from, to } 传递，序列化为 date_from/date_to 查询参数（后端 >= / <= 过滤）
-      if (params.date?.from) qs.set('date_from', params.date.from);
-      if (params.date?.to) qs.set('date_to', params.date.to);
-      const q = qs.toString();
-      const res = await fetch(`${baseUrl}/api/applications${q ? `?${q}` : ''}`);
-      if (!res.ok) {
-        throw new Error(`投递记录接口返回 HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as ApplicationListResponse;
-      if (seq !== fetchListSeq) return;
-      set({ items: data.items, total: data.total, loading: false });
-    } catch (err) {
-      if (seq !== fetchListSeq) return;
-      // 拉取失败时清空旧列表，避免陈旧的 items 被误认为最新结果（配合渲染层错误横幅提示）
-      set({ loading: false, listError: err instanceof Error ? err.message : String(err), items: [], total: 0 });
-    }
-  },
-  fetchStats: async (baseUrl) => {
-    const seq = ++fetchStatsSeq;
-    set({ statsLoading: true, statsError: null });
-    try {
-      const res = await fetch(`${baseUrl}/api/stats`);
-      if (!res.ok) {
-        throw new Error(`统计接口返回 HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as StatsResponse;
-      if (seq !== fetchStatsSeq) return;
-      set({ stats: data, statsLoading: false });
-    } catch (err) {
-      if (seq !== fetchStatsSeq) return;
-      // 拉取失败时清空旧统计，避免陈旧的 stats 被误认为最新结果（配合渲染层错误横幅提示）
-      set({ statsLoading: false, statsError: err instanceof Error ? err.message : String(err), stats: null });
-    }
-  },
-}));
-
-/** 新增/编辑投递记录的输入（POST / PATCH /api/applications）。 */
-export interface ApplicationInput {
-  job_title: string;
-  company: string;
-  city?: string;
-  salary?: string;
-  url?: string;
-  status?: string;
-  note?: string;
-  /** 投递时间（ISO 字符串）；缺省/未传时后端取当前时间，显式 null 表示「清空=未设置」（后端存 NULL）。 */
-  applied_at?: string | null;
-}
-
-/** PATCH /api/applications/{id} 更新投递记录（走共享 apiCall）。返回 null=成功，否则返回错误信息。 */
-async function updateApplication(
-  baseUrl: string,
-  id: number,
-  patch: Partial<ApplicationInput>,
-): Promise<string | null> {
-  const err = await apiCall(baseUrl, 'PATCH', `/api/applications/${id}`, patch);
-  return err === null ? null : `更新失败：${err}`;
-}
-
-/** DELETE /api/applications/{id} 删除投递记录（走共享 apiCall）。返回 null=成功，否则返回错误信息。 */
-async function deleteApplication(baseUrl: string, id: number): Promise<string | null> {
-  const err = await apiCall(baseUrl, 'DELETE', `/api/applications/${id}`);
-  return err === null ? null : `删除失败：${err}`;
-}
-
-/** 单条导入记录校验：job_title / company 必须为非空字符串，否则视为格式非法行（跳过不入库）。 */
-function isValidImportRecord(r: unknown): r is { job_title: string; company: string } {
-  if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
-  const rec = r as { job_title?: unknown; company?: unknown; id?: unknown };
-  // 有有效 id 的行视为「更新既有记录」：后端 update 分支对空 job_title/company 走 preserve-if-empty，
-  // 这里放行（与文件导入路径一致）；仅无 id（新建）行才强制 job_title/company 非空
-  const hasId = typeof rec.id === 'number' || (typeof rec.id === 'string' && rec.id.trim() !== '' && Number.isInteger(Number(rec.id)));
-  if (hasId) return true;
-  return (
-    typeof rec.job_title === 'string' && rec.job_title.trim() !== '' &&
-    typeof rec.company === 'string' && rec.company.trim() !== ''
-  );
-}
-
-/** 导入内容大小上限（约 5MB 文本），超限直接拒绝，避免超大 JSON 拖垮前端与后端。 */
-const IMPORT_MAX_CHARS = 5_000_000;
-
-/** POST /api/import 导入导出 JSON（需包含 applications 数组）。
- *  逐条校验 job_title / company 必填非空，非法行自动跳过，防止脏数据写入库中。 */
-async function importApplications(
-  baseUrl: string,
-  jsonText: string,
-): Promise<{ ok: boolean; error?: string; imported?: number; created?: number; updated?: number; skipped?: number }> {
-  if (jsonText.length > IMPORT_MAX_CHARS) {
-    return { ok: false, error: `导入失败：内容超过大小上限（约 ${Math.round(IMPORT_MAX_CHARS / 1e6)}MB），请拆分后分批导入` };
-  }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(jsonText);
-  } catch {
-    return { ok: false, error: '导入失败：JSON 解析错误，请检查粘贴内容' };
-  }
-  if (
-    !payload ||
-    typeof payload !== 'object' ||
-    Array.isArray(payload) ||
-    !Array.isArray((payload as { applications?: unknown[] }).applications)
-  ) {
-    return { ok: false, error: '导入失败：格式不符合导出 JSON（应包含 applications 数组）' };
-  }
-  const applications = (payload as { applications: unknown[] }).applications;
-  // 逐条校验 job_title / company 必填非空，跳过非法行，避免脏数据原样 POST /api/import。
-  // dropped 为本地预过滤丢弃数：这些行根本没 POST 给后端，后端 skipped 不含它们，
-  // 须由本函数并回返回，否则「跳过 N 条格式非法记录」提示永不出现（静默丢弃）。
-  const valid = applications.filter(isValidImportRecord);
-  const dropped = applications.length - valid.length;
-  if (valid.length === 0) {
-    return { ok: false, error: '导入失败：applications 中没有任何格式合法的记录（job_title / company 不能为空）' };
-  }
-  try {
-    const res = await fetch(`${baseUrl}/api/import`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, applications: valid }),
-    });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as { detail?: string } | null;
-      return { ok: false, error: `导入失败：${data?.detail ?? `HTTP ${res.status}`}` };
-    }
-    const result = (await res.json()) as { imported?: number; created?: number; updated?: number; skipped?: number };
-    return {
-      ok: true,
-      imported: result.imported ?? 0,
-      // created 旧后端回退（与 main.js 同款）：无 created 字段时 imported - updated 即新增数
-      created: result.created ?? Math.max(0, (result.imported ?? 0) - (result.updated ?? 0)),
-      updated: result.updated ?? 0,
-      skipped: (result.skipped ?? 0) + dropped,
-    };
-  } catch (err) {
-    return { ok: false, error: `导入失败：${err instanceof Error ? err.message : String(err)}` };
-  }
-}
-
-/** 数据页公共外层卡片。 */
-function DataPageCard(props: { title: string; onBack: () => void; children: ReactNode }) {
-  return (
-    <Card
-      style={{ maxWidth: 960, margin: '24px auto' }}
-      title={<Title level={4} style={{ margin: 0 }}>{props.title}</Title>}
-      extra={<Button onClick={props.onBack}>返回工作台</Button>}
-    >
-      {props.children}
-    </Card>
-  );
-}
-
-/** 数据管理工具条（手动备份 / 恢复数据 / 打开备份目录 / 导出数据）。
- *  仅依赖 Electron preload 的 window.api 主进程文件快照能力，不依赖投递列表 API，
- *  因此在列表加载失败 / 后端未连接的错误态下也必须保持可用（此时用户最需要恢复/备份数据）。
- *  恒常渲染于错误分支之外，避免错误态下陷入无法恢复数据的死胡同。 */
-export function DataTools({ onBackupNow }: { onBackupNow?: () => void }) {
-  return (
-    <Space wrap>
-      <Button
-        title="导出用于查看/归档，恢复需用备份"
-        onClick={async () => {
-          if (!window.api?.exportData || !window.api?.exportBackupData) {
-            message.error('Electron preload 桥接（window.api.exportData / exportBackupData）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            // 在线导出（依赖 GET /api/export）失败（后端崩溃/端口冲突）→ 自动降级离线导出最新自动备份 app.db，
-            // 使「导出」在错误态下仍可用（工具条契约：导出仅依赖主进程文件快照）。
-            const result = await window.api.exportData();
-            if (result.canceled) {
-              return; // 用户取消「另存为」对话框
-            }
-            if (result.ok && result.path) {
-              message.success(`数据已导出到：${result.path}（导出仅用于查看/归档，不作为恢复依据）`);
-              return;
-            }
-            const offline = await window.api.exportBackupData();
-            if (offline.canceled) {
-              return;
-            }
-            if (offline.ok && offline.path) {
-              message.warning(
-                `后端不可达，已从最新自动备份离线导出（${offline.backupName ?? ''}）：${offline.path}（备份快照数据，导出仅用于查看/归档，不作为恢复依据）`,
-              );
-              return;
-            }
-            message.error(`导出失败：${result.error ?? offline.error ?? '未知错误'}`);
-          } catch (err) {
-            message.error(`导出失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        导出数据
-      </Button>
-      <Button
-        title="导出前预览文件实际包含的内容（记录数 / 简历快照 / 脱敏配置摘要），不落盘"
-        onClick={async () => {
-          if (!window.api?.previewExportData || !window.api?.previewBackupExport) {
-            message.error('Electron preload 桥接（window.api.previewExportData / previewBackupExport）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            // 在线预览（依赖 GET /api/export）失败（后端不可达/端口冲突）→ 自动降级离线预览最新自动备份 app.db
-            let r = await window.api.previewExportData();
-            let fromBackup = false;
-            if (!r.ok) {
-              const off = await window.api.previewBackupExport();
-              if (!off.ok) {
-                message.error(`预览失败：${off.error ?? r.error ?? '未知错误'}`);
-                return;
-              }
-              r = off as { ok: boolean; payload?: Record<string, unknown>; error?: string };
-              fromBackup = true;
-            }
-            const pl = (r.payload ?? {}) as Record<string, unknown>;
-            const apps = Array.isArray(pl.applications) ? pl.applications : [];
-            const logs = Array.isArray(pl.apply_logs) ? pl.apply_logs : [];
-            const resumeObj =
-              pl.resume && typeof pl.resume === 'object' ? (pl.resume as Record<string, unknown>) : null;
-            const settingsObj =
-              pl.settings && typeof pl.settings === 'object' ? (pl.settings as Record<string, unknown>) : null;
-            Modal.info({
-              title: fromBackup ? '导出内容预览（离线备份）' : '导出内容预览',
-              width: 560,
-              content: (
-                <div style={{ fontSize: 13, lineHeight: '22px' }}>
-                  <div>投递记录：<b>{apps.length}</b> 条</div>
-                  <div>投递日志：{logs.length} 条</div>
-                  <div>
-                    简历快照：
-                    {resumeObj
-                      ? `包含（${[resumeObj.name, resumeObj.phone, resumeObj.email]
-                          .filter((v) => typeof v === 'string' && v)
-                          .join(' · ') || '未填写姓名/联系方式'}）`
-                      : '不含'}
-                  </div>
-                  <div>
-                    配置摘要（脱敏）：{settingsObj ? Object.keys(settingsObj).join('、') : '不含 settings 配置段'}
-                  </div>
-                  {fromBackup ? (
-                    <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                      后端不可达，以上内容来自最新自动备份快照（非实时数据），供导出前确认。
-                    </Typography.Text>
-                  ) : (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      以上与「导出数据」实际写入文件的内容一致，供导出前确认。
-                    </Typography.Text>
-                  )}
-                </div>
-              ),
-              okText: '知道了',
-            });
-          } catch (err) {
-            message.error(`预览导出失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        预览导出内容
-      </Button>
-      <Button
-        title="复用 /api/export 载荷中的 apply_logs 数组（previewExportData 已能取到），跨记录聚合浏览全部投递操作日志，按时间倒序渲染全局时间线（投递→约面→offer 全程复盘）"
-        onClick={async () => {
-          if (!window.api?.previewExportData || !window.api?.previewBackupExport) {
-            message.error('Electron preload 桥接（window.api.previewExportData / previewBackupExport）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            // 在线预览（依赖 GET /api/export）失败（后端不可达/端口冲突）→ 自动降级离线预览最新自动备份 app.db
-            let r = await window.api.previewExportData();
-            let fromBackup = false;
-            if (!r.ok) {
-              const off = await window.api.previewBackupExport();
-              if (!off.ok) {
-                message.error(`投递日志加载失败：${off.error ?? r.error ?? '未知错误'}`);
-                return;
-              }
-              r = off as { ok: boolean; payload?: Record<string, unknown>; error?: string };
-              fromBackup = true;
-            }
-            const pl = (r.payload ?? {}) as Record<string, unknown>;
-            const apps = Array.isArray(pl.applications) ? pl.applications : [];
-            const logs = Array.isArray(pl.apply_logs) ? pl.apply_logs : [];
-            if (logs.length === 0) {
-              message.info('暂无投递日志（apply_logs 为空）');
-              return;
-            }
-            // 以 application_id 关联投递记录，为每条日志补齐 公司 / 职位 上下文
-            const appById = new Map<number, Record<string, unknown>>();
-            for (const a of apps) {
-              if (a && typeof a === 'object') {
-                const rec = a as Record<string, unknown>;
-                if (typeof rec.id === 'number') appById.set(rec.id, rec);
-              }
-            }
-            // 全局时间线：按 created_at 倒序聚合（「投递→约面→offer」全量日志可整体复盘）
-            const rows = (logs as Array<Record<string, unknown>>)
-              .slice()
-              .sort((x, y) => String(y.created_at ?? '').localeCompare(String(x.created_at ?? '')))
-              .map((log, idx) => {
-                const app = appById.get(Number(log.application_id));
-                return {
-                  key: log.id ?? idx,
-                  time: String(log.created_at ?? '').replace('T', ' ').slice(0, 19),
-                  action: String(log.action ?? ''),
-                  company: app ? String(app.company ?? '') : '—',
-                  job: app ? String(app.job_title ?? '') : '—',
-                  detail: String(log.detail ?? ''),
-                };
-              });
-            Modal.info({
-              title: `全局投递日志（apply_logs 聚合时间线 · 共 ${rows.length} 条${fromBackup ? ' · 来自最新自动备份快照' : ''}）`,
-              width: 860,
-              content: (
-                <div style={{ maxHeight: 480, overflowY: 'auto' }}>
-                  <Table
-                    size="small"
-                    rowKey="key"
-                    pagination={{ pageSize: 20, showSizeChanger: false }}
-                    dataSource={rows}
-                    columns={[
-                      { title: '时间', dataIndex: 'time', width: 148 },
-                      { title: '动作', dataIndex: 'action', width: 96, render: (v: string) => <Badge color="#1677ff" text={v} /> },
-                      { title: '公司', dataIndex: 'company', width: 140, ellipsis: true },
-                      { title: '职位', dataIndex: 'job', width: 180, ellipsis: true },
-                      { title: '详情', dataIndex: 'detail', ellipsis: true },
-                    ]}
-                  />
-                </div>
-              ),
-              okText: '关闭',
-            });
-          } catch (err) {
-            message.error(`投递日志加载失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        投递日志
-      </Button>
-      <Button
-        title="把自动备份目录里最新一份备份（含 app.db + settings.json + 简历快照）打包为单一 .zip，便于跨机器 / 移动介质迁移"
-        onClick={async () => {
-          if (!window.api?.exportBackup) {
-            message.error('Electron preload 桥接（window.api.exportBackup）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            const result = await window.api.exportBackup();
-            if (result.canceled) {
-              return; // 用户取消「另存为」对话框
-            }
-            if (result.ok && result.path) {
-              message.success(`备份归档已导出：${result.path}（${result.name ?? ''}）`);
-            } else {
-              message.error(`导出备份归档失败：${result.error ?? '未知错误'}`);
-            }
-          } catch (err) {
-            message.error(`导出备份归档失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        导出备份归档(.zip)
-      </Button>
-      <Button
-        title="导入「导出备份归档」生成的 .zip，解压后按与应用内恢复同一安全口径落库并重启后端"
-        onClick={async () => {
-          if (!window.api?.importBackup) {
-            message.error('Electron preload 桥接（window.api.importBackup）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            const result = await window.api.importBackup();
-            if (result.canceled) {
-              return; // 用户取消「打开文件」对话框
-            }
-            if (result.ok) {
-              const settingsTxt =
-                result.settingsStatus === 'restored' || result.settingsStatus === 'retained_credentials_stripped'
-                  ? '；配置已合并'
-                  : result.settingsStatus === 'retained'
-                    ? '；已保留当前配置'
-                    : result.settingsStatus === 'parse_failed'
-                      ? '；配置解析失败，已保留当前配置'
-                      : '';
-              const snapshotTxt = result.preRestoreSnapshot ? `；可回滚点：${result.preRestoreSnapshot.name}` : '';
-              message.success(
-                `备份归档导入成功：${result.importedBackupName ?? result.path ?? ''}${settingsTxt}${snapshotTxt}`
-              );
-              setTimeout(() => window.location.reload(), 300);
-            } else {
-              message.error(`导入备份归档失败：${result.error ?? '未知错误'}`);
-            }
-          } catch (err) {
-            message.error(`导入备份归档失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        导入备份归档(.zip)
-      </Button>
-      <Button
-        onClick={async () => {
-          if (!window.api?.backupData) {
-            message.error('Electron preload 桥接（window.api.backupData）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            const result = await window.api.backupData();
-            if (result.canceled) {
-              return; // 用户取消「另存为」对话框
-            }
-            if (result.ok && result.path) {
-              message.success(`已备份到 ${result.path}`);
-            } else {
-              message.error(`备份失败：${result.error ?? '未知错误'}`);
-            }
-          } catch (err) {
-            message.error(`备份失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        手动备份
-      </Button>
-      <Button
-        title="立即备份到应用内自动备份目录（不走文件夹选择器，与自动备份同源，受保留上限管理）"
-        onClick={async () => {
-          if (!window.api?.backupNow) {
-            message.error('Electron preload 桥接（window.api.backupNow）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            const result = await window.api.backupNow();
-            if (result.ok) {
-              message.success(`已立即备份：${result.name}`);
-              onBackupNow?.();
-            } else {
-              message.error(`立即备份失败：${result.error ?? '未知错误'}`);
-            }
-          } catch (err) {
-            message.error(`立即备份失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        立即备份
-      </Button>
-      <Button
-        danger
-        onClick={() =>
-          confirmRestore({
-            title: '确认恢复数据？',
-            description:
-              '将用备份覆盖当前 app.db、settings.json 与简历快照，当前数据（含简历）将被替换。勾选下方选项可仅恢复投递记录，保留当前设置/LLM 配置与简历。',
-            successLabel: '数据已从备份恢复',
-          })
-        }
-      >
-        恢复数据
-      </Button>
-      <Button
-        onClick={async () => {
-          if (!window.api?.openBackupDir) {
-            message.error('Electron preload 桥接（window.api.openBackupDir）不可用，请通过 Electron 启动应用。');
-            return;
-          }
-          try {
-            const result = await window.api.openBackupDir();
-            if (!result.ok) {
-              message.error(`打开备份目录失败：${result.error ?? '未知错误'}`);
-            }
-          } catch (err) {
-            message.error(`打开备份目录失败：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }}
-      >
-        打开备份目录
-      </Button>
-    </Space>
-  );
-}
-
-/** /jobs 求职投递记录页：antd Table + Badge 展示记录，支持新增/编辑/改状态/删除/导入，分页 + 状态筛选 + 关键词跨页搜索。 */
 export function JobsPage() {
+  const { token } = theme.useToken();
   const navigate = useNavigate();
+  // 列显隐状态（localStorage 持久化，初始读存储，损坏回落全显示）
+  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(() => loadVisibleKeys(COLUMN_DEFS));
+  const handleColumnChange = useCallback((keys: Set<string>) => {
+    setVisibleKeys(keys);
+    persistVisibleKeys(keys);
+  }, []);
   // 后端底座（baseUrl 解析 + IPC 就绪/失败订阅 + 聚焦自愈 + 卸载清理）统一由 useBackendBase 处理；
   // refreshToken 自增即触发下方 fetch effect 重拉，语义与 Dashboard 对齐。
   const { base: baseUrl, refreshToken: backendReady, reload: reconnect } = useBackendBase();
   const location = useLocation();
-  const [page, setPage] = useState(1);
+  const { getParam, setParam } = useTableUrlState();
+  // 分页 URL 化：初始从 URL ?page= 恢复（无效/缺失回落第 1 页），翻页/筛选重置统一由下方 effect 写回
+  const [page, setPage] = useState<number>(() => {
+    const p = Number(getParam('page'));
+    return Number.isInteger(p) && p > 0 ? p : 1;
+  });
+  // 分页写回 URL（replace，防循环：不改 page state，page 未变则同值 replace 收敛）
+  useEffect(() => {
+    setParam('page', page > 1 ? page : undefined);
+  }, [page, setParam]);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   // 看板统计卡片/趋势柱下钻：TrackerPage 导航到 /jobs?status=… / ?keyword=… 时从 URL 预筛选初始化。
   // /jobs 由 / 路由全新挂载，mount 时读一次 useLocation().search 即可，无需订阅路由变更。
@@ -1145,7 +483,7 @@ export function JobsPage() {
               </div>
               <div>投递日志：{logCount} 条</div>
               <div>
-                将覆盖已有 id：<b style={{ color: overwriteCount > 0 ? '#ff4d4f' : undefined }}>{overwriteCount}</b> 条
+                将覆盖已有 id：<b style={{ color: overwriteCount > 0 ? token.colorError : undefined }}>{overwriteCount}</b> 条
                 {overwriteCount > 0 ? '（同 id 记录将被替换）' : '（全部为新增）'}
               </div>
               <div>{hasSettings ? '载荷含 settings 配置段，导入时合并配置' : '载荷不含 settings 配置段'}</div>
@@ -1286,23 +624,32 @@ export function JobsPage() {
     {
       title: '薪资',
       dataIndex: 'salary',
+      key: 'salary',
       width: 110,
       sorter: (a, b) => parseSalaryNum(a.salary) - parseSalaryNum(b.salary),
+      render: (v: string) => (
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{v || '—'}</span>
+      ),
     },
     {
       title: '状态',
       dataIndex: 'status',
       width: 90,
       render: (v: string) => (
-        <Badge color={STATUS_COLOR[v] ?? '#d9d9d9'} text={STATUS_TEXT[v] ?? v} />
+        <Badge color={STATUS_COLOR[v] ?? STATUS_COLOR.closed} text={STATUS_TEXT[v] ?? v} />
       ),
     },
     {
       title: '投递时间',
       dataIndex: 'applied_at',
+      key: 'applied_at',
       width: 160,
       sorter: (a, b) => (a.applied_at || '').localeCompare(b.applied_at || ''),
-      render: (v: string) => (v ? v.replace('T', ' ').slice(0, 16) : '—'),
+      render: (v: string) => (
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {v ? v.replace('T', ' ').slice(0, 16) : '—'}
+        </span>
+      ),
     },
     { title: '备注', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
     {
@@ -1351,6 +698,18 @@ export function JobsPage() {
     },
     ],
     [handleStatusChange, openEditModal, openLogsModal, baseUrl, handleDelete, openExternal],
+  );
+
+  // 列显隐过滤：按 visibleKeys 保留可见列（操作列 key='action'，其余 dataIndex）
+  const visibleColumns = useMemo(
+    () =>
+      columns?.filter((c) => {
+        const key = String(
+          (c as { key?: string }).key ?? (c as { dataIndex?: string }).dataIndex ?? ''
+        );
+        return visibleKeys.has(key);
+      }) ?? undefined,
+    [columns, visibleKeys],
   );
 
   return (
@@ -1493,6 +852,7 @@ export function JobsPage() {
               <Button title="导出当前筛选结果的 CSV，用于 HR/复盘查看" onClick={() => void handleExportCsv()}>
                 导出 CSV
               </Button>
+              <ColumnSettings columns={COLUMN_DEFS} visibleKeys={visibleKeys} onChange={handleColumnChange} />
             </Space>
             {backupInfo ? (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -1612,7 +972,7 @@ export function JobsPage() {
                                         style={{
                                           maxHeight: 260,
                                           overflowY: 'auto',
-                                          border: '1px solid #f0f0f0',
+                                          border: `1px solid ${token.colorBorder}`,
                                           borderRadius: 4,
                                           padding: 4,
                                         }}
@@ -1622,7 +982,7 @@ export function JobsPage() {
                                             key={i}
                                             style={{
                                               padding: '2px 4px',
-                                              borderBottom: i < samples.length - 1 ? '1px dashed #f0f0f0' : 'none',
+                                              borderBottom: i < samples.length - 1 ? `1px dashed ${token.colorBorder}` : 'none',
                                             }}
                                           >
                                             <Typography.Text strong>{s.job_title || '（无职位名）'}</Typography.Text>
@@ -1638,7 +998,7 @@ export function JobsPage() {
                                       </div>
                                     </div>
                                   ) : (
-                                    <div style={{ marginTop: 8, color: '#999' }}>（该备份内无投递记录样本）</div>
+                                    <div style={{ marginTop: 8, color: token.colorTextSecondary }}>（该备份内无投递记录样本）</div>
                                   )}
                                 </div>
                               ),
@@ -1764,7 +1124,7 @@ export function JobsPage() {
                   setPage(Math.min(p, Math.max(1, Math.ceil(total / ps))));
                 },
               }}
-              columns={columns}
+              columns={visibleColumns}
             />
             <Modal
               title={editingId ? '编辑投递记录' : '新增投递记录'}
@@ -1877,12 +1237,111 @@ export function TrackerPage() {
     if (baseUrl) void fetchStats(baseUrl);
   }, [baseUrl, backendReady, fetchStats]);
 
-  // maxCount 用 Math.max(0, …) 而非 Math.max(1, …)：近 30 天全零趋势时 maxCount=0，
-  // 下方「峰值」标签与满刻度参考线据此隐藏，避免渲染出误导性的「峰值 1」。
-  const maxCount = useMemo(
-    () => Math.max(0, ...(stats?.daily_trend ?? []).map((d) => d.count)),
-    [stats],
-  );
+  // 图表色板（token 派生，亮暗自适应）+ 看板两图 option（数据 /api/stats 已有，后端零改动）
+  const chartPalette = useChartPalette();
+  const trendData = useMemo(() => stats?.daily_trend ?? [], [stats]);
+  const trendOption = useMemo(() => {
+    const p = chartPalette;
+    return {
+      grid: { left: 8, right: 16, top: 20, bottom: 4, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: p.bg,
+        borderColor: p.border,
+        textStyle: { color: p.text },
+        formatter: (params: unknown) => {
+          const arr = params as Array<{ axisValue?: string; data?: { value?: number } }>;
+          const first = arr[0];
+          if (!first) return '';
+          return `${first.axisValue ?? ''}<br/>投递 ${first.data?.value ?? 0} 次`;
+        },
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: trendData.map((d) => d.date),
+        axisLabel: { color: p.textSecondary, fontSize: 11, formatter: (v: string) => v.slice(5) },
+        axisLine: { lineStyle: { color: p.splitLine } },
+      },
+      yAxis: {
+        type: 'value',
+        minInterval: 1,
+        axisLabel: { color: p.textSecondary },
+        splitLine: { lineStyle: { color: p.splitLine, type: 'dashed' } },
+      },
+      series: [
+        {
+          name: '投递数',
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          data: trendData.map((d) => ({ value: d.count, date: d.date })),
+          itemStyle: { color: p.primary },
+          lineStyle: { color: p.primary, width: 2 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: p.primary },
+                { offset: 1, color: `${p.primary}00` }, // 主色 → 透明渐变（8 位 hex 0 alpha，无硬编码）
+              ],
+            },
+          },
+          emphasis: { focus: 'series' },
+        },
+      ],
+    };
+  }, [chartPalette, trendData]);
+
+  const pieOption = useMemo(() => {
+    const p = chartPalette;
+    const total = stats?.total ?? 0;
+    const applying = stats?.applying ?? 0;
+    const offer = stats?.offer_count ?? 0;
+    const rejected = stats?.rejected ?? 0;
+    const other = Math.max(0, total - applying - offer - rejected);
+    const data = [
+      { name: '进行中', value: applying, itemStyle: { color: p.primary } },
+      { name: 'Offer', value: offer, itemStyle: { color: p.success } },
+      { name: '被拒', value: rejected, itemStyle: { color: p.error } },
+      { name: '其他', value: other, itemStyle: { color: p.splitLine } },
+    ].filter((d) => d.value > 0);
+    return {
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: p.bg,
+        borderColor: p.border,
+        textStyle: { color: p.text },
+      },
+      legend: {
+        bottom: 0,
+        textStyle: { color: p.textSecondary, fontSize: 12 },
+        itemWidth: 12,
+        itemHeight: 12,
+      },
+      series: [
+        {
+          type: 'pie',
+          radius: ['52%', '78%'],
+          center: ['50%', '44%'],
+          data,
+          label: { color: p.text, fontSize: 12, formatter: '{b}\n{d}%' },
+          labelLine: { lineStyle: { color: p.splitLine } },
+        },
+      ],
+    };
+  }, [chartPalette, stats]);
+
+  // 趋势图点击下钻：点击某日 → /jobs?date= 查看该日投递记录（与原手写柱状图行为一致）
+  const handleTrendClick = useCallback((params: unknown) => {
+    const data = (params as { data?: { date?: string } }).data;
+    if (data?.date) navigate(`/jobs?date=${data.date}`);
+  }, [navigate]);
 
   return (
     <DataPageCard title="求职看板" onBack={() => navigate('/')}>
@@ -1922,141 +1381,52 @@ export function TrackerPage() {
               >
                 刷新
               </Button>
-              {/* 统计卡片可点击下钻到 /jobs 记录页并按状态预筛选（JobsPage 从 URL ?status= 预筛）。
+              {/* 统计卡可点击下钻到 /jobs 记录页并按状态预筛选（JobsPage 从 URL ?status= 预筛）。
                   「进行中」聚合 pending/replied/interview，但后端 status 筛选为单选，取待反馈(pending)为代表态，
                   完整聚合可在记录页状态筛选处二次选择。 */}
-              <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/jobs')}>
-                <Statistic title="累计投递" value={stats.total} />
-              </Button>
-              <Button
-                type="link"
-                style={{ padding: 0, height: 'auto' }}
-                title="卡片统计含待反馈/已回复/面试中；点击仅跳转「待反馈」明细，已回复/面试中请在记录页状态筛选处选择"
+              <StatCard title="累计投递" value={stats.total ?? 0} onClick={() => navigate('/jobs')} />
+              <StatCard
+                title="进行中"
+                value={stats.applying ?? 0}
+                tone="primary"
+                titleTip="卡片统计含待反馈/已回复/面试中；点击仅跳转「待反馈」明细，已回复/面试中请在记录页状态筛选处选择"
                 onClick={() => navigate('/jobs?status=pending')}
-              >
-                <Statistic title="进行中" value={stats.applying} />
-              </Button>
-              <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/jobs?status=offer')}>
-                <Statistic title="Offer 数" value={stats.offer_count} valueStyle={{ color: '#52c41a' }} />
-              </Button>
-              <Button
-                type="link"
-                style={{ padding: 0, height: 'auto' }}
-                title="卡片统计含被拒/已关闭；点击仅跳转「被拒」明细，已关闭请在记录页状态筛选处选择"
-                onClick={() => navigate('/jobs?status=rejected')}
-              >
-                <Statistic title="被拒" value={stats.rejected} valueStyle={{ color: '#ff4d4f' }} />
-              </Button>
-              <Button
-                type="link"
-                style={{ padding: 0, height: 'auto' }}
-                title="通过率 = Offer / 累计投递；点击跳转「Offer」明细"
+              />
+              <StatCard
+                title="Offer 数"
+                value={stats.offer_count ?? 0}
+                tone="success"
                 onClick={() => navigate('/jobs?status=offer')}
-              >
-                <Statistic title="通过率" value={stats.pass_rate * 100} precision={1} suffix="%" />
-              </Button>
+              />
+              <StatCard
+                title="被拒"
+                value={stats.rejected ?? 0}
+                tone="error"
+                titleTip="卡片统计含被拒/已关闭；点击仅跳转「被拒」明细，已关闭请在记录页状态筛选处选择"
+                onClick={() => navigate('/jobs?status=rejected')}
+              />
+              <StatCard
+                title="通过率"
+                value={(stats.pass_rate ?? 0) * 100}
+                precision={1}
+                suffix="%"
+                tone="primary"
+                titleTip="通过率 = Offer / 累计投递；点击跳转「Offer」明细"
+                onClick={() => navigate('/jobs?status=offer')}
+              />
             </Space>
-            <Card size="small" title="近 30 天投递趋势">
-              <div style={{ position: 'relative' }}>
-                {/* 最大值/满刻度参考线：顶到柱子的满高位置，帮助估读相对比例。
-                    全零趋势（maxCount=0）时不渲染，避免 0 次投递却显示满刻度虚线 +「峰值 0」标签。 */}
-                {maxCount > 0 ? (
-                  <>
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 16,
-                        left: 0,
-                        right: 0,
-                        borderTop: '1px dashed rgba(0,0,0,0.18)',
-                      }}
-                    />
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: 16,
-                        left: 0,
-                        transform: 'translateY(-50%)',
-                        fontSize: 10,
-                        lineHeight: 1,
-                        color: 'rgba(0,0,0,0.45)',
-                        background: 'rgba(255,255,255,0.9)',
-                        padding: '0 4px',
-                        borderRadius: 2,
-                      }}
-                    >
-                      峰值 {maxCount}
-                    </span>
-                  </>
-                ) : null}
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 106 }}>
-                  {stats.daily_trend.map((d, i) => {
-                    // 趋势数组固定 30 天、按日期升序排列，最后一项即今日（后端 data.py 保证）
-                    const isToday = i === stats.daily_trend.length - 1;
-                    const barH = d.count === 0 ? 2 : Math.max(4, Math.round((d.count / maxCount) * 90));
-                    return (
-                      <div
-                        key={d.date}
-                        title={`${d.date} · 投递 ${d.count} 次${isToday ? '（今日）' : ''}（点击下钻查看该日投递记录）`}
-                        onClick={() => navigate(`/jobs?date=${d.date}`)}
-                        style={{
-                          flex: 1,
-                          height: '100%',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'flex-end',
-                          alignItems: 'center',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {d.count > 0 ? (
-                          <span
-                            style={{
-                              fontSize: 9,
-                              lineHeight: '14px',
-                              color: isToday ? '#d4380d' : '#1677ff',
-                              fontWeight: isToday ? 600 : 400,
-                            }}
-                          >
-                            {d.count}
-                          </span>
-                        ) : null}
-                        <div
-                          style={{
-                            width: '100%',
-                            height: barH,
-                            borderRadius: 2,
-                            background: d.count === 0 ? '#f0f0f0' : isToday ? '#fa8c16' : '#1677ff',
-                          }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* 稀疏 x 轴日期刻度：每 5 天一个 + 末尾今日，避免 30 个标签挤在一起 */}
-                <div style={{ display: 'flex', marginTop: 4 }}>
-                  {stats.daily_trend.map((d, i) => {
-                    const isToday = i === stats.daily_trend.length - 1;
-                    const show = i % 5 === 0 || isToday;
-                    return (
-                      <div
-                        key={d.date}
-                        style={{
-                          flex: 1,
-                          textAlign: 'center',
-                          fontSize: 10,
-                          lineHeight: '16px',
-                          color: isToday ? '#d4380d' : 'rgba(0,0,0,0.45)',
-                          fontWeight: isToday ? 600 : 400,
-                        }}
-                      >
-                        {show ? (isToday ? `今日 ${d.date.slice(5)}` : d.date.slice(5)) : ''}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </Card>
+            <Space size="large" wrap style={{ width: '100%' }}>
+              <ChartCard title="近 30 天投递趋势" style={{ flex: 1, minWidth: 320 }}>
+                {trendData.length > 0 ? (
+                  <BaseChart height={240} option={trendOption} onClick={handleTrendClick} />
+                ) : (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无投递趋势数据" />
+                )}
+              </ChartCard>
+              <ChartCard title="投递状态分布" style={{ flex: 1, minWidth: 280 }}>
+                <BaseChart height={240} option={pieOption} />
+              </ChartCard>
+            </Space>
           </>
         ) : (
           <Alert type="info" showIcon message="暂无统计数据" />

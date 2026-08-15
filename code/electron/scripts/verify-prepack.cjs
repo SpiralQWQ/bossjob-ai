@@ -24,6 +24,7 @@
  */
 
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 // __dirname = code/electron/scripts；frontendScripts = code/frontend/scripts
@@ -72,12 +73,35 @@ function runLocalGate(scriptName) {
 }
 
 /**
+ * 把前端构建产物 frontend/dist 同步到 electron/frontend/dist（打包可见的 asar 路径）。
+ * 背景（packaging-fix 2026-08-13）：electron-builder 的 files glob 不支持越出 app 目录的
+ * 上一级相对路径模式（会被静默忽略），导致 asar 里没有 UI（打包态白屏）。
+ * 修法：打包前把已通过 verify-dist 校验的 frontend/dist 复制进 electron/frontend/dist，
+ * 打包配置 files 改用应用内路径 frontend/dist（→ app.asar 根/frontend/dist/），
+ * 与 main.js 打包态 FRONTEND_DIST_INDEX 的路径推导对齐。
+ * 每次打包都重新同步（先清后拷），保证安装包内的 UI 与本次校验的产物一致。
+ */
+function syncFrontendDist() {
+  const electronRoot = path.join(__dirname, '..'); // code/electron
+  const src = path.join(electronRoot, '..', 'frontend', 'dist'); // code/frontend/dist
+  const dest = path.join(electronRoot, 'frontend', 'dist'); // code/electron/frontend/dist
+  if (!fs.existsSync(path.join(src, 'index.html'))) {
+    throw new Error('[verify-prepack] frontend/dist 缺失 index.html，请先 cd frontend && npm run build。');
+  }
+  fs.rmSync(dest, { recursive: true, force: true });
+  fs.cpSync(src, dest, { recursive: true });
+  console.log(`[verify-prepack] 已同步 frontend/dist → electron/frontend/dist（${fs.readdirSync(dest).length} 项）。`);
+}
+
+/**
  * electron-builder beforePack hook：打包开始前强制跑完整 CSP 门禁。
  * 任一脚本失败即 throw（electron-builder 将中止打包），绝不让宽松 CSP 产物进安装包。
+ * 门禁全部通过后同步 frontend/dist 到打包可见路径（见 syncFrontendDist）。
  */
 module.exports = async function verifyPrepack() {
   runGate('verify-dist.mjs');
   runGate('verify-csp.mjs');
   runLocalGate('verify-endpoint-whitelist.cjs');
+  syncFrontendDist();
   console.log('[verify-prepack] 打包前置 CSP + 端点白名单门禁全部通过，继续打包。');
 };

@@ -1,33 +1,30 @@
-# ── Python ──────────────────────────────────────────────
+# Node
+node_modules/
+dist/
+
+# Python
 __pycache__/
-*.py[cod]
+*.pyc
 .venv/
 venv/
 
-# ── Node ────────────────────────────────────────────────
-node_modules/
-dist/
+# Build artifacts
 build/
+release/
 
-# ── 运行时产物 / 本地数据（不入库）──────────────────────
-backend/data/
-*.db
-*.db-wal
-*.db-shm
-temp/
-.backups/
+# Binaries
+*.exe
+*.msi
 
-# ── 本地敏感配置（用 settings.json 模板，勿提交真实配置）──
+# Local config overrides (never commit real API keys / local paths)
 settings.json
+settings.local.json
 .env
-*.local.json
-
-# ── 内部验收报告（本地留档，不进开源仓库）──
-docs/开源验收报告_*.md
-
-# ── IDE / 系统 ──────────────────────────────────────────
-.idea/
-.vscode/
 *.log
+
+# OS
 .DS_Store
 Thumbs.db
+
+# 本地数据（SQLite 不入库，隐私）
+code/backend/data/
